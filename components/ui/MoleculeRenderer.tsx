@@ -25,6 +25,54 @@ interface MoleculeRendererProps {
 
 type RenderState = 'loading' | 'svg' | 'png' | 'hidden';
 
+/** CSS #hex -> RDKit draw colour [r,g,b] in 0..1 */
+function hexToRgb01(hex: string): [number, number, number] {
+    const h = hex.replace('#', '').trim();
+    const full =
+        h.length === 3
+            ? h
+                  .split('')
+                  .map((c) => c + c)
+                  .join('')
+            : h;
+    if (full.length !== 6) return [0.2, 0.4, 0.9];
+    const r = parseInt(full.slice(0, 2), 16) / 255;
+    const g = parseInt(full.slice(2, 4), 16) / 255;
+    const b = parseInt(full.slice(4, 6), 16) / 255;
+    return [r, g, b];
+}
+
+/**
+ * Bonds whose both endpoints are highlighted — bond index matches RDKit JSON `molecules[0].bonds` order.
+ */
+function bondsBetweenHighlightedAtoms(
+    mol: { get_json: () => string },
+    atomIndices: number[],
+    highlightAtomColors: Record<number, [number, number, number]>,
+): { bonds: number[]; highlightBondColors: Record<number, [number, number, number]> } {
+    const set = new Set(atomIndices);
+    try {
+        const data = JSON.parse(mol.get_json()) as {
+            molecules?: Array<{ bonds?: Array<{ atoms: [number, number] }> }>;
+        };
+        const bonds = data.molecules?.[0]?.bonds ?? [];
+        const outBonds: number[] = [];
+        const highlightBondColors: Record<number, [number, number, number]> = {};
+
+        bonds.forEach((b, bondIdx) => {
+            const [a1, a2] = b.atoms;
+            if (!set.has(a1) || !set.has(a2)) return;
+            outBonds.push(bondIdx);
+            const rgb = highlightAtomColors[a1] ?? highlightAtomColors[a2];
+            if (rgb) highlightBondColors[bondIdx] = rgb;
+        });
+
+        return { bonds: outBonds, highlightBondColors };
+    } catch {
+        return { bonds: [], highlightBondColors: {} };
+    }
+}
+
 export default function MoleculeRenderer({
     smiles,
     compoundId,
@@ -56,25 +104,37 @@ export default function MoleculeRenderer({
 
                         if (atomColors && Object.keys(atomColors).length > 0) {
                             const atomIndices = Object.keys(atomColors).map(Number);
-                            const highlightColors: Record<number, [number, number, number]> = {};
-
+                            const highlightAtomColors: Record<number, [number, number, number]> = {};
                             for (const idx of atomIndices) {
-                                // Convert CSS hex color (#rrggbb) to RDKit [r, g, b] floats
-                                const hex = atomColors[idx].replace('#', '');
-                                const r = parseInt(hex.slice(0, 2), 16) / 255;
-                                const g = parseInt(hex.slice(2, 4), 16) / 255;
-                                const b = parseInt(hex.slice(4, 6), 16) / 255;
-                                highlightColors[idx] = [r, g, b];
+                                highlightAtomColors[idx] = hexToRgb01(atomColors[idx]);
                             }
 
+                            const { bonds, highlightBondColors } = bondsBetweenHighlightedAtoms(
+                                mol,
+                                atomIndices,
+                                highlightAtomColors,
+                            );
+
+                            // MetaCyc-like: emphasize coloured atom symbols, not large filled halos.
+                            // See RDKit MolDrawOptions (fillHighlights, circleAtoms, continuousHighlight).
                             svg = mol.get_svg_with_highlights(
                                 JSON.stringify({
                                     atoms: atomIndices,
-                                    bonds: [],
-                                    highlightAtomColors: highlightColors,
+                                    bonds,
+                                    highlightAtomColors,
+                                    highlightBondColors,
                                     width,
                                     height,
-                                })
+                                    continuousHighlight: false,
+                                    circleAtoms: false,
+                                    fillHighlights: false,
+                                    atomHighlightsAreCircles: false,
+                                    standardColoursForHighlightedAtoms: false,
+                                    scaleHighlightBondWidth: false,
+                                    highlightBondWidthMultiplier: 4,
+                                    // 1 = LASSO (alternative to default CIRCLEANDLINE for multi-colour)
+                                    multiColourHighlightStyle: 1,
+                                }),
                             );
                         } else {
                             svg = mol.get_svg(width, height);
