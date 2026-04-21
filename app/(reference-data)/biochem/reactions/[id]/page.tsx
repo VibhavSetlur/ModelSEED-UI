@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { getReactionById, EXTERNAL_DBS } from '@/lib/api/biochem';
 import ChemicalEquation from '@/components/ui/ChemicalEquation';
 import ReactionStructureEquation from '@/components/ui/ReactionStructureEquation';
+import type { ReactionAtomMapping } from '@/components/ui/ReactionStructureEquation';
 
 function extractCompoundIds(equation: string): string[] {
     if (!equation) return [];
@@ -299,6 +300,29 @@ function ReversibilityDisplay({ value }: { value?: string }) {
     );
 }
 
+function getPrototypeAtomMapping(reactionId: string): ReactionAtomMapping | undefined {
+    if (reactionId !== 'rxn00001') return undefined;
+
+    // Mock mapping for prototype visualization only.
+    // Map IDs are represented by matching colors across both sides.
+    return {
+        // PPi (left)
+        cpd00012: {
+            0: '#0ea5e9',
+            1: '#a855f7',
+            2: '#22c55e',
+            3: '#f97316',
+        },
+        // Phosphate (right) - share colors with matching source atoms
+        cpd00009: {
+            0: '#0ea5e9',
+            1: '#a855f7',
+            2: '#22c55e',
+            3: '#f97316',
+        },
+    };
+}
+
 export default function ReactionDetailPage() {
     const { id } = useParams<{ id: string }>();
 
@@ -342,6 +366,7 @@ export default function ReactionDetailPage() {
         : Number.isNaN(err)
           ? `${dg} kcal/mol`
           : `${dg} +/- ${err} kcal/mol`;
+    const prototypeAtomMapping = getPrototypeAtomMapping(rxn.id);
 
     return (
         <Box sx={{ px: 3, py: 2, maxWidth: 1240, mx: 'auto' }}>
@@ -364,10 +389,19 @@ export default function ReactionDetailPage() {
                                 <ReactionStructureEquation
                                     equation={rxn.equation ?? rxn.definition}
                                     reversibility={rxn.reversibility}
+                                    atomMapping={prototypeAtomMapping}
                                 />
                             )}
                         </Box>
                     </DetailRow>
+                    {prototypeAtomMapping && (
+                        <DetailRow label="Atom mapping overlay">
+                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                                Prototype mode: colors are hard-coded for this reaction to validate
+                                mapped-atom rendering behavior before real mapping data is available.
+                            </Typography>
+                        </DetailRow>
+                    )}
 
                     <DetailRow label="Abbreviation">
                         <Chip size="small" label={rxn.abbreviation ?? 'N/A'} sx={{ fontFamily: 'monospace', fontWeight: 700 }} />
