@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - TBD
 
+### Fixed
+- Enlarged reaction compound previews now close reliably when the pointer leaves the structure image, while preserving independent keyboard focus behavior.
+
+### Removed
+- Unused tracked `.gsd/` planning scaffolding, `.clauderules`, and orphan `gsd-opencode` submodule gitlink.
+- Dead GSD references from `.gitignore`, `INDEX.md`, `README.md`, `docs/DEVELOPER_GUIDE.md`, `eslint.config.mjs`, and `vitest.config.ts`.
+
 ### Known Issues
 - RAST MS FBA not working
 - PATRIC-only model submission
@@ -17,10 +24,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [3.4.1] - 2026-09-08
+## [3.6.0] - 2026-09-01
+
+### Added
+- Molecule structure images now render on an off-white `#F5F5F5` canvas with a thin `#333333` outline on atom glyphs, so coloured atom labels stay legible.
 
 ### Fixed
-- Reaction quick search now matches compound names displayed in Equation fields on both legacy and Solr-9 nested schemas.
+- Atom-mapping colours in reactions with many mapped groups are now clearly distinguishable; the warm/brown band was removed and mapped colours no longer collide with unmapped phosphorus or oxygen atom colours.
+
+---
+
+## [3.5.1] - 2026-08-31
+
+### Fixed
+- Within a single reaction, atom-mapping group colours now use the maximally separated subset of the existing colour-blind-safe palette instead of the first N entries, preventing reported brown/rust versus red-orange confusion; worst-case four-group separation rises from dE76 19.0 to 36.1, while reactions with more than the eight-colour palette still wrap.
+- Enlarged compound-structure previews now open below the hovered or focused compound and stay inside the viewport, flipping above only when there is no room below, so they are no longer cut off at the top.
+
+---
+
+## [3.5.0] - 2026-08-27
+
+### Added
+- Hovering or keyboard-focusing a compound in a reaction's structure equation now shows an enlarged preview of that compound's structure with the same atom-mapping colors, making large molecules legible.
+
+---
+
+## [3.4.1] - 2026-08-27
+
+### Fixed
+- Reaction quick-search no longer queries Solr 9 nested stoichiometry child paths as parent fields, and reaction details now return normalized stoichiometry participants.
+- Solr 9 compound batch and reverse reaction lookups now restrict results to parent documents.
 
 ---
 
@@ -29,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Solr reaction, compound and structure lookups can now each use their own endpoint and core through separate environment variables, while retaining the shared Solr base when no per-corpus value is set
 - An optional server-side proxy lets a deployment or local checkout serve Solr from its own origin
+
+### Documentation
+- Documented the full Solr environment surface and endpoint switching scenarios for legacy, Solr 9, temporary, and proxied instances
 
 ### Fixed
 - Structure-core environment overrides now reach browser lookups instead of silently falling back to the shared endpoint
@@ -67,6 +103,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Replaced the flat reaction atom-flow diagram with the structure canvas; the raw mapping list remains available as secondary detail
 - Reaction thermodynamics direction agreement is now derived from the per-source direction operators rather than a single server flag, and reports three states: "Sources agree on direction" (all operators identical), "Sources could agree on direction" (only one angle-bracket direction, optionally mixed with `=`) and "Sources disagree on direction" (both `>` and `<` present)
+
+### Known Issues
+- RAST MS FBA not working
+- PATRIC-only model submission
+- Workspace write operations limited
+
+### Expected Behaviors
+- Models/Media differ between RAST and PATRIC (intentional system design)
 
 ---
 
