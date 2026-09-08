@@ -75,7 +75,7 @@ function parseSynonyms(aliases?: string[]): string[] {
     return nameEntry.split(';').map((s) => s.trim()).filter(Boolean);
 }
 
-function EquationCell({ equation, reaction }: { equation: string; reaction: Reaction }) {
+export function EquationCell({ equation, reaction }: { equation: string; reaction: Reaction }) {
     const apiRef = useGridApiContext();
     const filterModel = useGridSelector(apiRef, gridFilterModelSelector);
 

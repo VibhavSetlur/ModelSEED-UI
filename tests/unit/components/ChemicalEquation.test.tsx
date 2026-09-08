@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { DataGrid, gridFilterModelSelector, type GridColDef, type GridFilterModel, useGridApiContext, useGridSelector } from '@mui/x-data-grid';
+import { DataGrid, type GridColDef, type GridFilterModel } from '@mui/x-data-grid';
 import ChemicalEquation from '@/components/ui/ChemicalEquation';
+import { EquationCell } from '@/app/(reference-data)/biochem/reactions/page';
 import type { Reaction } from '@/lib/api/biochem';
 import { resetSolrSchemaCache } from '@/lib/api/solrSchema';
 
@@ -12,13 +13,6 @@ const participant = {
     name: 'Glucoraphanin',
     is_reactant: true,
 };
-
-function EquationCell({ equation, reaction }: { equation: string; reaction: Reaction }) {
-    const apiRef = useGridApiContext();
-    const filterModel = useGridSelector(apiRef, gridFilterModelSelector);
-
-    return <ChemicalEquation equation={equation} participants={reaction.participants} reaction={reaction} quickFilterValues={filterModel.quickFilterValues ?? []} />;
-}
 
 function renderReactionGrid(rows: Reaction[], quickFilterValues: string[]) {
     const columns: GridColDef<Reaction>[] = [{
