@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Enlarged reaction compound previews now close reliably when the pointer leaves the structure image, while preserving independent keyboard focus behavior.
+- Reaction search now safely escapes and URL-encodes query input across legacy flat and Solr nested schemas, including Equation and compound participation searches.
 
 ### Removed
 - Unused tracked `.gsd/` planning scaffolding, `.clauderules`, and orphan `gsd-opencode` submodule gitlink.

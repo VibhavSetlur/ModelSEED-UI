@@ -94,13 +94,14 @@ describe('Solr stoichiometry support', () => {
         expect(reaction.stoichiometry).toBe('-1:cpd00001:0:0:"H2O"');
         expect(reaction.participants).toHaveLength(1);
         await api.getReactions({ filterModel: { items: [], quickFilterValues: ['cpd05331'] } });
-        expect(dataUrl(fetchMock)).toBe(
-            `https://modelseed.org/solr/reactions_staging/select?wt=json&fl=name,id,definition,deltag,deltagerr,reversibility,stoichiometry,status,aliases,ec_numbers,is_obsolete,is_transport,ontology,pathways,notes&q=${encodeURIComponent('(id:*cpd05331* OR name:*cpd05331* OR definition:*cpd05331* OR status:*cpd05331* OR ec_numbers:*cpd05331* OR aliases:*cpd05331* OR pathways:*cpd05331* OR stoichiometry:*cpd05331* OR notes:*cpd05331*)')}&rows=25&sort=id asc`,
-        );
+        const legacyListUrl = new URL(dataUrl(fetchMock));
+        expect(legacyListUrl.searchParams.get('fl')).toBe('name,id,definition,deltag,deltagerr,reversibility,stoichiometry,status,aliases,ec_numbers,is_obsolete,is_transport,ontology,pathways,notes');
+        expect(legacyListUrl.searchParams.get('q')).toBe('(id:*cpd05331* OR name:*cpd05331* OR definition:*cpd05331* OR status:*cpd05331* OR ec_numbers:*cpd05331* OR aliases:*cpd05331* OR pathways:*cpd05331* OR stoichiometry:*cpd05331* OR notes:*cpd05331*)');
+        expect(legacyListUrl.searchParams.get('sort')).toBe('id asc');
         await api.getReactions({ filterModel: { items: [], quickFilterValues: ['Glucoraphanin'] } });
         expect(new URL(dataUrl(fetchMock)).searchParams.get('q')).toContain('definition:*Glucoraphanin*');
         await api.findReactionsForCompound('cpd00002');
-        expect(dataUrl(fetchMock)).toBe('https://modelseed.org/solr/reactions_staging/select?wt=json&q=equation:*cpd00002*&fl=*&rows=25');
+        expect(new URL(dataUrl(fetchMock)).searchParams.get('q')).toBe('equation:*cpd00002*');
     });
 
     it('uses parent-scoped nested Equation quick search, reaction joins, and compound batches', async () => {
@@ -124,10 +125,10 @@ describe('Solr stoichiometry support', () => {
         expect(nestedQuery).toContain('({!parent which="doc_type:reaction" v="doc_type:stoichiometry AND (compound:*cpd05331* OR participant_name:*cpd05331*)"})');
         expect(nestedQuery).toContain(') AND (');
         await api.findReactionsForCompound('cpd00002');
-        expect(decodeURIComponent(dataUrl(fetchMock))).toContain('{!parent which="doc_type:reaction"}doc_type:stoichiometry AND compound:cpd00002');
+        expect(new URL(dataUrl(fetchMock)).searchParams.get('q')).toContain('{!parent which="doc_type:reaction" v="doc_type:stoichiometry AND compound:cpd00002"}');
         expect(dataUrl(fetchMock)).toContain(`fq=${encodeURIComponent('doc_type:reaction')}`);
         await api.findReactionsForCompound('cpd*');
-        expect(decodeURIComponent(dataUrl(fetchMock))).toContain('q=equation:*cpd**');
+        expect(new URL(dataUrl(fetchMock)).searchParams.get('q')).toContain('compound:*cpd\\**');
         await api.getCompoundsByIds(['cpd00001']);
         expect(dataUrl(fetchMock)).toContain(`fq=${encodeURIComponent('doc_type:compound')}`);
     });
@@ -137,5 +138,111 @@ describe('Solr stoichiometry support', () => {
         const fetchMock = mockFetch({ compounds: false });
         await api.getCompoundsByIds(['cpd00001']);
         expect(dataUrl(fetchMock)).not.toContain('fq=');
+    });
+});
+
+
+describe('reaction request regression matrix', () => {
+    beforeEach(() => resetSolrSchemaCache());
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllEnvs();
+        resetSolrSchemaCache();
+    });
+
+    // Matrix: legacy/nested quick terms, Equation child joins, escaped input, filters, paging and URL fields.
+    it.each([
+        { nested: false, terms: ['rxn', 'ATP'], logic: 'and' as const, expected: 'stoichiometry:*ATP*', absent: 'doc_type:reaction' },
+        { nested: true, terms: ['rxn', 'ATP'], logic: 'or' as const, expected: 'participant_name:*ATP*', absent: 'stoichiometry:*' },
+        { nested: false, terms: ['A+B / C'], logic: 'and' as const, expected: 'definition:*A\\+B*\\/*C*', absent: 'doc_type:reaction' },
+        { nested: true, terms: ['ab'], logic: 'and' as const, expected: 'definition:ab*', absent: 'stoichiometry:*' },
+    ])('builds safe $nested-schema quick search for $terms', async ({ nested, terms, logic, expected, absent }) => {
+        const api = await loadBiochemApi();
+        const fetchMock = mockFetch({ reactions: nested });
+        await api.getReactions({
+            limit: 7,
+            offset: 3,
+            sort: { field: 'name', desc: true },
+            filterModel: { items: [], quickFilterValues: terms, quickFilterLogicOperator: logic },
+        });
+        const url = new URL(dataUrl(fetchMock));
+        const q = url.searchParams.get('q') ?? '';
+        expect(q).toContain(expected);
+        expect(q).not.toContain(absent);
+        expect(url.searchParams.get('rows')).toBe('7');
+        expect(url.searchParams.get('start')).toBe('3');
+        expect(url.searchParams.get('sort')).toBe('name desc');
+        expect(url.searchParams.get('fl')).toContain('definition');
+        expect(url.searchParams.getAll('fq')).toEqual(nested ? ['doc_type:reaction'] : []);
+    });
+
+    it('keeps blank and intentional wildcard direct queries broad without exposing raw syntax', async () => {
+        const api = await loadBiochemApi();
+        const fetchMock = mockFetch({ reactions: false });
+        await api.getReactions({ query: '*' });
+        expect(new URL(dataUrl(fetchMock)).searchParams.get('q')).toBe('*');
+        await api.getReactions({ filterModel: { items: [], quickFilterValues: ['   '] } });
+        expect(new URL(dataUrl(fetchMock)).searchParams.get('q')).toBe('*');
+    });
+
+    it('combines Equation aliases, filters, query columns, direct query and encoded URL values', async () => {
+        const api = await loadBiochemApi();
+        const fetchMock = mockFetch({ reactions: false });
+        await api.getReactions({
+            query: 'Equation',
+            queryColumn: { synonyms: 'alpha beta' },
+            filterModel: {
+                items: [
+                    { field: 'definition', operator: 'contains', value: 'cpd00002' },
+                    { field: 'status', operator: 'startsWith', value: 'ok' },
+                    { field: 'name', operator: 'endsWith', value: 'ase' },
+                    { field: 'is_transport', operator: 'equals', value: true },
+                    { field: 'deltag', operator: '>=', value: -4 },
+                ],
+                logicOperator: 'or',
+            },
+        });
+        const url = new URL(dataUrl(fetchMock));
+        const q = url.searchParams.get('q') ?? '';
+        expect(q).toContain('definition:*Equation*');
+        expect(q).toContain('definition:*cpd00002*');
+        expect(q).toContain('status:ok*');
+        expect(q).toContain('name:*ase');
+        expect(q).toContain('is_transport:true OR deltag:[-4 TO *]');
+        expect(q).toContain('aliases:*alpha*beta*');
+    });
+
+    it('escapes and encodes compound lookups in both schemas', async () => {
+        const legacy = await loadBiochemApi();
+        const legacyFetch = mockFetch({ reactions: false });
+        await legacy.findReactionsForCompound('cpd* OR id:rxn', { limit: 2, offset: 1, sort: { field: 'name' } });
+        const legacyUrl = new URL(dataUrl(legacyFetch));
+        expect(legacyUrl.searchParams.get('q')).toBe('equation:*cpd\\**OR*id\\:rxn*');
+        expect(legacyUrl.searchParams.get('fl')).toBe('*');
+        expect(legacyUrl.searchParams.get('sort')).toBe('name asc');
+
+        resetSolrSchemaCache();
+        const nested = await loadBiochemApi();
+        const nestedFetch = mockFetch({ reactions: true });
+        await nested.findReactionsForCompound('cpd00002');
+        const nestedUrl = new URL(dataUrl(nestedFetch));
+        expect(nestedUrl.searchParams.get('q')).toBe('{!parent which="doc_type:reaction" v="doc_type:stoichiometry AND compound:cpd00002"}');
+        expect(nestedUrl.searchParams.getAll('fq')).toEqual(['doc_type:reaction']);
+    });
+
+    it('normalizes malformed successful Solr responses without masking HTTP failures', async () => {
+        const api = await loadBiochemApi();
+        vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => Promise.resolve(
+            new Response(JSON.stringify(String(input).includes('rows=0') ? { response: { numFound: 0, docs: [] } } : { response: {} }), { status: 200 }),
+        ));
+        await expect(api.getReactions()).resolves.toMatchObject({ numFound: 0, start: 0, docs: [] });
+    });
+
+    it('preserves HTTP failures while normalizing only successful malformed bodies', async () => {
+        const api = await loadBiochemApi();
+        vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => Promise.resolve(
+            new Response('unavailable', { status: String(input).includes('rows=0') ? 200 : 503 }),
+        ));
+        await expect(api.getReactions()).rejects.toThrow('Solr request failed: 503');
     });
 });
