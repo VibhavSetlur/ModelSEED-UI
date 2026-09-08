@@ -47,6 +47,16 @@ describe('Solr stoichiometry support', () => {
         expect(api.normalizeStoichiometry({ stoichiometry: [
             { compound: 'first', coefficient: 1 }, { compound: 'second', coefficient: -1 },
         ] }).map((p) => p.compound)).toEqual(['first', 'second']);
+        expect(api.normalizeStoichiometry({ stoichiometry: [
+            { doc_type: ['stoichiometry'], compound: ['cpd05331'], coefficient: ['-1'], compartment: ['0'], participant_name: ['Glucoraphanin'] },
+            { doc_type: ['stoichiometry'], compound: ['cpd00001'], coefficient: ['1'], participant_name: ['', 'Water'] },
+            { doc_type: ['stoichiometry'], compound: ['cpd00002'], coefficient: ['1'], participant_name: [] },
+            { doc_type: ['not-stoichiometry'], compound: ['excluded'], coefficient: ['1'] },
+        ] })).toEqual([
+            { compound: 'cpd05331', coefficient: -1, compartment: 0, name: 'Glucoraphanin', is_reactant: true },
+            { compound: 'cpd00001', coefficient: 1, compartment: 0, name: 'Water', is_reactant: false },
+            { compound: 'cpd00002', coefficient: 1, compartment: 0, name: 'cpd00002', is_reactant: false },
+        ]);
     });
 
     it('parses legacy strings and round-trips them', async () => {
@@ -90,7 +100,7 @@ describe('Solr stoichiometry support', () => {
         const nestedApi = await loadBiochemApi();
         const nestedFetch = mockFetch({ reactions: true }, {
             id: 'rxn00001', definition: 'Glucoraphanin <=> Glucose',
-            stoichiometry: [{ doc_type: 'stoichiometry', compound: 'cpd05331', coefficient: -1, participant_name: 'Glucoraphanin' }],
+            stoichiometry: [{ doc_type: ['stoichiometry'], compound: ['cpd05331'], coefficient: ['-1'], participant_name: ['Glucoraphanin'] }],
         });
         const nested = await nestedApi.getReactions();
         expect(dataUrl(nestedFetch)).toContain(encodeURIComponent('[child childFilter=doc_type:stoichiometry limit=200]'));

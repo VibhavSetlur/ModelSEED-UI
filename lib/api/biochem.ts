@@ -849,10 +849,23 @@ export interface StoichiometryParticipant {
     formula?: string;
 }
 
+/** Returns the first meaningful scalar from a Solr scalar-or-array field. */
+function unwrapSolrScalar(value: unknown): string | number | undefined {
+    for (const candidate of Array.isArray(value) ? value : [value]) {
+        if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate;
+        if (typeof candidate === 'number' && Number.isFinite(candidate)) return candidate;
+    }
+    return undefined;
+}
+
+function unwrapSolrString(value: unknown): string | undefined {
+    const scalar = unwrapSolrScalar(value);
+    return scalar === undefined ? undefined : String(scalar);
+}
+
 /** Coerces a Solr thermodynamics child's `energy`/`error` value to a finite number or null. */
 function coerceThermodynamicsNumber(value: unknown): number | null {
-    const raw = Array.isArray(value) ? value[0] : value;
-    const num = Number(raw);
+    const num = Number(unwrapSolrScalar(value));
     return Number.isFinite(num) ? num : null;
 }
 
@@ -912,26 +925,27 @@ export function normalizeStoichiometry(doc: unknown): StoichiometryParticipant[]
         for (const child of children) {
             if (!child || typeof child !== 'object') continue;
             const c = child as Record<string, unknown>;
-            if (typeof c.doc_type === 'string' && c.doc_type !== 'stoichiometry') continue;
-            if (typeof c.compound !== 'string' || c.compound.length === 0) continue;
+            const docType = unwrapSolrString(c.doc_type);
+            if (docType && docType !== 'stoichiometry') continue;
+            const compound = unwrapSolrString(c.compound);
+            if (!compound) continue;
             const coefficient = coerceThermodynamicsNumber(c.coefficient);
             if (coefficient === null) continue;
-            const nestMatch = typeof c._nest_path_ === 'string'
-                ? /\/stoichiometry#(\d+)$/.exec(c._nest_path_)
-                : null;
+            const nestPathValue = unwrapSolrString(c._nest_path_);
+            const nestMatch = nestPathValue ? /\/stoichiometry#(\d+)$/.exec(nestPathValue) : null;
             if (!nestMatch) canSortByNestPath = false;
             const entry: StoichiometryParticipant & { nestPath?: number } = {
-                compound: c.compound,
+                compound,
                 coefficient,
                 compartment: coerceThermodynamicsNumber(c.compartment) ?? 0,
-                name: typeof c.participant_name === 'string' && c.participant_name.length > 0
-                    ? c.participant_name : c.compound,
+                name: unwrapSolrString(c.participant_name) ?? compound,
                 is_reactant: typeof c.is_reactant === 'boolean' ? c.is_reactant : coefficient < 0,
                 nestPath: nestMatch ? Number(nestMatch[1]) : undefined,
             };
             const charge = coerceThermodynamicsNumber(c.participant_charge);
             if (charge !== null) entry.charge = charge;
-            if (typeof c.participant_formula === 'string' && c.participant_formula.length > 0) entry.formula = c.participant_formula;
+            const formula = unwrapSolrString(c.participant_formula);
+            if (formula) entry.formula = formula;
             results.push(entry);
         }
         if (canSortByNestPath) results.sort((a, b) => a.nestPath! - b.nestPath!);

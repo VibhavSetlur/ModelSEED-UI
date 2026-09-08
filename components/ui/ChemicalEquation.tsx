@@ -96,19 +96,33 @@ function formatChemicalText(text: string, highlights: string[]): React.ReactNode
     return result;
 }
 
-function getEquationHighlights(equation: string, participants: StoichiometryParticipant[], quickFilterValues: string[]): string[] {
-    const terms = quickFilterValues
+function getParticipantString(value: unknown): string | undefined {
+    for (const candidate of Array.isArray(value) ? value : [value]) {
+        if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate;
+        if (typeof candidate === 'number' && Number.isFinite(candidate)) return String(candidate);
+    }
+    return undefined;
+}
+
+function getEquationHighlights(equation: string, participants: StoichiometryParticipant[] | unknown, quickFilterValues: string[] | unknown): string[] {
+    const terms = (Array.isArray(quickFilterValues) ? quickFilterValues : [])
         .flatMap((value) => String(value ?? '').split(/\s+/))
         .map((term) => term.trim())
         .filter(Boolean);
+    const safeParticipants = Array.isArray(participants) ? participants : [];
+    const equationLower = equation.toLowerCase();
     const highlights = new Set<string>();
 
     for (const term of terms) {
-        if (equation.toLowerCase().includes(term.toLowerCase())) highlights.add(term);
-        for (const participant of participants) {
-            if (participant.compound.toLowerCase().includes(term.toLowerCase()) || participant.name.toLowerCase().includes(term.toLowerCase())) {
-                if (equation.toLowerCase().includes(participant.name.toLowerCase())) highlights.add(participant.name);
-            }
+        const termLower = term.toLowerCase();
+        if (equationLower.includes(termLower)) highlights.add(term);
+        for (const participant of safeParticipants) {
+            if (!participant || typeof participant !== 'object') continue;
+            const record = participant as Record<string, unknown>;
+            const compound = getParticipantString(record.compound);
+            const name = getParticipantString(record.name);
+            if (!name || !(compound?.toLowerCase().includes(termLower) || name.toLowerCase().includes(termLower))) continue;
+            if (equationLower.includes(name.toLowerCase())) highlights.add(name);
         }
     }
 
