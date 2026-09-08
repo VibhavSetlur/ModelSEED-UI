@@ -257,6 +257,7 @@ export default function ReactionsPage() {
             id: doc.id,
             name: doc.name,
             definition: doc.definition,
+            participants: doc.participants,
             deltag: doc.deltag,
             reversibility: doc.reversibility,
             status: doc.status,

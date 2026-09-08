@@ -34,6 +34,21 @@ function renderEquation(quickFilterValues: string[], equation = 'cpd05331 + Gluc
     return renderReactionGrid([{ id: 'rxn00001', name: 'Example reaction', aliases: [], definition: equation, participants }] as unknown as Reaction[], quickFilterValues);
 }
 
+function mapReactionToPageRow(doc: Reaction): Reaction {
+    return {
+        id: doc.id,
+        name: doc.name,
+        definition: doc.definition,
+        participants: doc.participants,
+        deltag: doc.deltag,
+        reversibility: doc.reversibility,
+        status: doc.status,
+        ec_numbers: doc.ec_numbers?.join('; ') || '',
+        pathways: doc.pathways?.join('; ') || '',
+        is_transport: doc.is_transport ? 'Yes' : 'No',
+    } as unknown as Reaction;
+}
+
 async function getProductionShapedNestedReaction(): Promise<Reaction> {
     resetSolrSchemaCache();
     vi.resetModules();
@@ -85,9 +100,10 @@ describe('ChemicalEquation', () => {
         expect(screen.getByRole('link', { name: 'cpd05331' }).getAttribute('href')).toBe('/biochem/compounds/cpd05331');
     });
 
-    it('renders a production-shaped nested search result with the matched participant name marked', async () => {
+    it('renders a production-shaped nested search result through the reactions-page row mapping with the matched participant name marked', async () => {
         const reaction = await getProductionShapedNestedReaction();
-        renderReactionGrid([reaction], ['cpd05331']);
+        const pageRow = mapReactionToPageRow(reaction);
+        renderReactionGrid([pageRow], ['cpd05331']);
 
         const mark = document.querySelector('mark');
         expect(mark).not.toBeNull();
