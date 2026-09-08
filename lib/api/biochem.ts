@@ -118,6 +118,8 @@ export interface SolrQueryOpts {
     filterModel?: GridFilterModel;
     /** Raw Solr `fq` clauses, appended in order (e.g. a nested-schema parent-doc filter). */
     filterQueries?: string[];
+    /** Include nested stoichiometry child fields in reaction quick search. */
+    nestedStoichiometryQuickSearch?: boolean;
 }
 
 /* ─── External DB Links ──────────────────────────────────────── */
@@ -347,6 +349,7 @@ function buildQuickSearchClause(
     searchFields: string[] | undefined,
     quickFilterValues: string[],
     quickFilterLogicOperator: 'and' | 'or',
+    nestedStoichiometryQuickSearch = false,
 ): string {
     if (query === '*' || query === '*:*') return '*';
 
@@ -369,6 +372,12 @@ function buildQuickSearchClause(
                         ? `${solrField}:${token}*`
                         : `${solrField}:*${token}*`;
                 });
+                if (nestedStoichiometryQuickSearch) {
+                    const wildcard = usePrefixOnly ? `${token}*` : `*${token}*`;
+                    fieldClauses.push(
+                        `({!parent which="${parentDocTypeFilter('reactions')}" v="doc_type:stoichiometry AND (compound:${wildcard} OR participant_name:${wildcard})"})`,
+                    );
+                }
                 return `(${fieldClauses.join(' OR ')})`;
             }
 
@@ -400,6 +409,7 @@ function buildSolrUrl(collection: BiochemCollection, opts: SolrQueryOpts = {}): 
         visible = [],
         filterModel,
         filterQueries = [],
+        nestedStoichiometryQuickSearch = false,
     } = opts;
 
     // Field list
@@ -447,6 +457,7 @@ function buildSolrUrl(collection: BiochemCollection, opts: SolrQueryOpts = {}): 
         searchFields,
         filterModel?.quickFilterValues ?? [],
         filterModel?.quickFilterLogicOperator ?? 'and',
+        nestedStoichiometryQuickSearch,
     );
 
     const finalClauses: string[] = [];
@@ -1053,6 +1064,7 @@ export async function getReactions(opts: SolrQueryOpts = {}): Promise<SolrRespon
     const queryOpts = nested
         ? {
             ...mergedOpts,
+            nestedStoichiometryQuickSearch: true,
             filterQueries: [...(mergedOpts.filterQueries ?? []), parentDocTypeFilter('reactions')],
         }
         : mergedOpts;

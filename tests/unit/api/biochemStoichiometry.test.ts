@@ -93,21 +93,36 @@ describe('Solr stoichiometry support', () => {
         expect(dataUrl(fetchMock)).toBe('https://modelseed.org/solr/reactions_staging/select?wt=json&q=id:rxn00001');
         expect(reaction.stoichiometry).toBe('-1:cpd00001:0:0:"H2O"');
         expect(reaction.participants).toHaveLength(1);
-        await api.getReactions({ filterModel: { items: [], quickFilterValues: ['cpd00001'] } });
+        await api.getReactions({ filterModel: { items: [], quickFilterValues: ['cpd05331'] } });
         expect(dataUrl(fetchMock)).toBe(
-            `https://modelseed.org/solr/reactions_staging/select?wt=json&fl=name,id,definition,deltag,deltagerr,reversibility,stoichiometry,status,aliases,ec_numbers,is_obsolete,is_transport,ontology,pathways,notes&q=${encodeURIComponent('(id:*cpd00001* OR name:*cpd00001* OR definition:*cpd00001* OR status:*cpd00001* OR ec_numbers:*cpd00001* OR aliases:*cpd00001* OR pathways:*cpd00001* OR stoichiometry:*cpd00001* OR notes:*cpd00001*)')}&rows=25&sort=id asc`,
+            `https://modelseed.org/solr/reactions_staging/select?wt=json&fl=name,id,definition,deltag,deltagerr,reversibility,stoichiometry,status,aliases,ec_numbers,is_obsolete,is_transport,ontology,pathways,notes&q=${encodeURIComponent('(id:*cpd05331* OR name:*cpd05331* OR definition:*cpd05331* OR status:*cpd05331* OR ec_numbers:*cpd05331* OR aliases:*cpd05331* OR pathways:*cpd05331* OR stoichiometry:*cpd05331* OR notes:*cpd05331*)')}&rows=25&sort=id asc`,
         );
+        await api.getReactions({ filterModel: { items: [], quickFilterValues: ['Glucoraphanin'] } });
+        expect(new URL(dataUrl(fetchMock)).searchParams.get('q')).toContain('definition:*Glucoraphanin*');
         await api.findReactionsForCompound('cpd00002');
         expect(dataUrl(fetchMock)).toBe('https://modelseed.org/solr/reactions_staging/select?wt=json&q=equation:*cpd00002*&fl=*&rows=25');
     });
 
-    it('uses parent-only nested quick search, reaction joins, and compound batches', async () => {
+    it('uses parent-scoped nested Equation quick search, reaction joins, and compound batches', async () => {
         const api = await loadBiochemApi();
         const fetchMock = mockFetch({ reactions: true, compounds: true });
-        await api.getReactions({ filterModel: { items: [], quickFilterValues: ['cpd00001'] } });
-        expect(dataUrl(fetchMock)).toContain(`fq=${encodeURIComponent('doc_type:reaction')}`);
-        expect(decodeURIComponent(dataUrl(fetchMock))).toContain('definition:*cpd00001*');
-        expect(decodeURIComponent(dataUrl(fetchMock))).not.toContain('stoichiometry:');
+        await api.getReactions({
+            filterModel: {
+                items: [],
+                quickFilterValues: ['Glucoraphanin', 'cpd05331'],
+                quickFilterLogicOperator: 'and',
+            },
+        });
+        const nestedUrl = new URL(dataUrl(fetchMock));
+        const nestedQuery = nestedUrl.searchParams.get('q') ?? '';
+        expect(nestedUrl.searchParams.getAll('fq')).toContain('doc_type:reaction');
+        expect(nestedQuery).toContain('id:*Glucoraphanin*');
+        expect(nestedQuery).toContain('name:*Glucoraphanin*');
+        expect(nestedQuery).toContain('definition:*Glucoraphanin*');
+        expect(nestedQuery).not.toContain('stoichiometry:*');
+        expect(nestedQuery).toContain('({!parent which="doc_type:reaction" v="doc_type:stoichiometry AND (compound:*Glucoraphanin* OR participant_name:*Glucoraphanin*)"})');
+        expect(nestedQuery).toContain('({!parent which="doc_type:reaction" v="doc_type:stoichiometry AND (compound:*cpd05331* OR participant_name:*cpd05331*)"})');
+        expect(nestedQuery).toContain(') AND (');
         await api.findReactionsForCompound('cpd00002');
         expect(decodeURIComponent(dataUrl(fetchMock))).toContain('{!parent which="doc_type:reaction"}doc_type:stoichiometry AND compound:cpd00002');
         expect(dataUrl(fetchMock)).toContain(`fq=${encodeURIComponent('doc_type:reaction')}`);
