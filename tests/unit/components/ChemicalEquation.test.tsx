@@ -110,6 +110,25 @@ describe('ChemicalEquation', () => {
         expect(screen.getByRole('mark').textContent).toBe('Glucoraphanin');
     });
 
+    it('maps nested, pipe-delimited aliases to the rendered participant without marking another product', () => {
+        const reaction = {
+            id: 'rxn05331',
+            name: 'unrelated reaction metadata',
+            aliases: ['Registry: unrelated-product'],
+            definition: 'Glucoraphanin + H2O <=> Glucose',
+            participants: [{
+                compound: [['cpd05331']],
+                participant_name: [['Glucoraphanin']],
+                participant_aliases: [['Name: GRA|Registry: cpd05331-alias']],
+            }],
+        } as unknown as Reaction;
+
+        renderReactionGrid([reaction], ['cpd05331-alias']);
+
+        expect(screen.getByRole('mark').textContent).toBe('Glucoraphanin');
+        expect(screen.queryByRole('mark', { name: 'Glucose' })).toBeNull();
+    });
+
     it('maps array and legacy participant metadata to only rendered participant tokens', () => {
         const reaction = {
             id: 'rxn05331',

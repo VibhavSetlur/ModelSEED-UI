@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - TBD
 
 ### Fixed
+- Pending releases.
+
+---
+
+## [3.6.5] - 2026-09-08
+
+### Fixed
+- Equation quick-filter now preserves nested and pipe-delimited participant aliases, mapping each matched alias only to its rendered compound label or ID.
+
+---
+
+## [3.6.4] - 2026-09-08
+
+### Fixed
 - Enlarged reaction compound previews now close reliably when the pointer leaves the structure image, while preserving independent keyboard focus behavior.
 - Reaction search now safely escapes and URL-encodes query input across legacy flat and Solr nested schemas, including Equation and compound participation searches.
 

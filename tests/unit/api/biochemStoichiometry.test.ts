@@ -63,10 +63,10 @@ describe('Solr stoichiometry support', () => {
         const api = await loadBiochemApi();
         expect(api.normalizeStoichiometry({ stoichiometry: [
             { compound: 'cpd1', coefficient: -1, participant_name: 'One', participant_aliases: 'Name: First;Database: A1' },
-            { compound: 'cpd2', coefficient: 1, participant_name: 'Two', participant_aliases: ['Name: Second', 'Database: B2;B3'] },
+            { compound: 'cpd2', coefficient: 1, participant_name: 'Two', participant_aliases: ['Name: Second', ['Database: B2;B3|Registry: C4']] },
         ] })).toEqual([
             { compound: 'cpd1', coefficient: -1, compartment: 0, name: 'One', is_reactant: true, aliases: ['Name: First', 'Database: A1'] },
-            { compound: 'cpd2', coefficient: 1, compartment: 0, name: 'Two', is_reactant: false, aliases: ['Name: Second', 'Database: B2', 'B3'] },
+            { compound: 'cpd2', coefficient: 1, compartment: 0, name: 'Two', is_reactant: false, aliases: ['Name: Second', 'Database: B2', 'B3', 'Registry: C4'] },
         ]);
         expect(api.normalizeStoichiometry({ stoichiometry: '-1:cpd1:0:0:"One"' })[0].aliases).toBeUndefined();
     });
