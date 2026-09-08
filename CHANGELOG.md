@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.6.4] - 2026-09-08
+
+### Fixed
+- Reaction Equation quick-filter highlights now map current nested participant aliases and compound metadata to the matching visible equation label without associating reaction metadata with an unrelated participant.
+
+---
+
 ## [3.6.3] - 2026-09-08
 
 ### Fixed

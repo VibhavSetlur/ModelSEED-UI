@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import type { StoichiometryParticipant } from '@/lib/api/biochem';
+import type { Reaction, StoichiometryParticipant } from '@/lib/api/biochem';
 
 const markStyle = { backgroundColor: '#fff3cd', color: '#856404', padding: '0 2px', borderRadius: '2px' };
 
@@ -74,14 +74,17 @@ function formatChemicalText(text: string, highlights: string[]): React.ReactNode
         }
 
         const compound = match[1];
-        const isHighlighted = highlights.some((highlight) => compound.toLowerCase() === highlight.toLowerCase());
+        const hasExactCompoundHighlight = highlights.some((highlight) => compound.toLowerCase() === highlight.toLowerCase());
+        const hasPartialCompoundHighlight = highlights.some((highlight) => compound.toLowerCase().includes(highlight.toLowerCase()));
         result.push(
             <Link
                 key={`cpd-${match.index}-${compound}`}
                 href={`/biochem/compounds/${compound}`}
                 style={{ color: '#00acc1', textDecoration: 'none' }}
             >
-                {isHighlighted ? <mark style={markStyle}>{compound}</mark> : compound}
+                {hasExactCompoundHighlight
+                    ? <mark style={markStyle}>{compound}</mark>
+                    : hasPartialCompoundHighlight ? formatHighlightedText(compound, highlights, match.index, 'compound') : compound}
             </Link>
         );
 
@@ -96,18 +99,60 @@ function formatChemicalText(text: string, highlights: string[]): React.ReactNode
     return result;
 }
 
-function getEquationHighlights(equation: string, participants: StoichiometryParticipant[], quickFilterValues: string[]): string[] {
-    const terms = quickFilterValues
-        .flatMap((value) => String(value ?? '').split(/\s+/))
+function getStringTerms(value: unknown): string[] {
+    if (Array.isArray(value)) return value.flatMap(getStringTerms);
+    if (typeof value === 'string' && value.trim().length > 0) return [value.trim()];
+    if (typeof value === 'number' && Number.isFinite(value)) return [String(value)];
+    return [];
+}
+
+function getAliasTerms(value: unknown): string[] {
+    return getStringTerms(value)
+        .flatMap((entry) => entry.split(';'))
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+            const separator = entry.indexOf(':');
+            return separator > 0 ? entry.slice(separator + 1).trim() : entry;
+        })
+        .filter(Boolean);
+}
+
+function getParticipantDisplayTerms(record: Record<string, unknown>): string[] {
+    return getStringTerms(record.participant_name ?? record.name ?? record.compound);
+}
+
+function getEquationHighlights(equation: string, participants: StoichiometryParticipant[] | unknown, quickFilterValues: string[] | unknown): string[] {
+    const terms = getStringTerms(quickFilterValues)
+        .flatMap((value) => value.split(/\s+/))
         .map((term) => term.trim())
         .filter(Boolean);
+    const safeParticipants = Array.isArray(participants) ? participants : [];
+    const equationLower = equation.toLowerCase();
     const highlights = new Set<string>();
 
     for (const term of terms) {
-        if (equation.toLowerCase().includes(term.toLowerCase())) highlights.add(term);
-        for (const participant of participants) {
-            if (participant.compound.toLowerCase().includes(term.toLowerCase()) || participant.name.toLowerCase().includes(term.toLowerCase())) {
-                if (equation.toLowerCase().includes(participant.name.toLowerCase())) highlights.add(participant.name);
+        const termLower = term.toLowerCase();
+        if (equationLower.includes(termLower)) highlights.add(term);
+        // Reaction metadata is intentionally not mapped to a participant. It can
+        // only mark its literal Equation text through the check above.
+        for (const participant of safeParticipants) {
+            if (!participant || typeof participant !== 'object') continue;
+            const record = participant as Record<string, unknown>;
+            const compoundTerms = getStringTerms(record.compound);
+            const metadataTerms = [
+                ...compoundTerms,
+                ...getStringTerms(record.participant_name),
+                ...getStringTerms(record.name),
+                ...getAliasTerms(record.participant_aliases),
+                ...getAliasTerms(record.aliases),
+            ];
+            if (!metadataTerms.some((value) => value.toLowerCase().includes(termLower))) continue;
+            for (const displayTerm of getParticipantDisplayTerms(record)) {
+                if (equationLower.includes(displayTerm.toLowerCase())) highlights.add(displayTerm);
+            }
+            for (const compound of compoundTerms) {
+                if (equationLower.includes(compound.toLowerCase())) highlights.add(compound);
             }
         }
     }
@@ -118,10 +163,14 @@ function getEquationHighlights(equation: string, participants: StoichiometryPart
 interface ChemicalEquationProps {
     equation: string | undefined | null;
     participants?: StoichiometryParticipant[];
+    reaction?: Pick<Reaction, 'id' | 'name' | 'aliases'>;
     quickFilterValues?: string[];
 }
 
-export default function ChemicalEquation({ equation, participants = [], quickFilterValues = [] }: ChemicalEquationProps) {
+export default function ChemicalEquation({ equation, participants = [], reaction, quickFilterValues = [] }: ChemicalEquationProps) {
+    // Reaction metadata is intentionally not mapped to a participant; only literal
+    // quick-filter matches in the equation are highlighted.
+    void reaction;
     if (!equation) return 'N/A';
 
     const cleaned = equation
