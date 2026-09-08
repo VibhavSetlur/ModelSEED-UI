@@ -988,7 +988,7 @@ const SYNONYM_FIELD_ALIAS = 'aliases';
 const MIN_WILDCARD_QUERY_LENGTH = 3;
 
 /** Reaction search fields matching legacy `rxn_sFields`. */
-const RXN_SEARCH_FIELDS = ['id', 'name', 'status', 'ec_numbers', 'aliases', 'pathways', 'stoichiometry', 'notes'];
+const RXN_SEARCH_FIELDS = ['id', 'name', 'definition', 'status', 'ec_numbers', 'aliases', 'pathways', 'stoichiometry', 'notes'];
 
 /** Solr 9 nested stoichiometry is a child path, not a queryable parent field; querying it yields HTTP 400 "undefined field stoichiometry". */
 const RXN_SEARCH_FIELDS_NESTED = RXN_SEARCH_FIELDS.filter((field) => field !== 'stoichiometry');
