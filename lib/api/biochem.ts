@@ -899,7 +899,10 @@ const SYNONYM_FIELD_ALIAS = 'aliases';
 const MIN_WILDCARD_QUERY_LENGTH = 3;
 
 /** Reaction search fields matching legacy `rxn_sFields`. */
-const RXN_SEARCH_FIELDS = ['id', 'name', 'status', 'ec_numbers', 'aliases', 'pathways', 'stoichiometry', 'notes'];
+const RXN_SEARCH_FIELDS = ['id', 'name', 'definition', 'status', 'ec_numbers', 'aliases', 'pathways', 'stoichiometry', 'notes'];
+
+/** Solr 9 nested stoichiometry is a child path, not a queryable parent field. */
+const RXN_SEARCH_FIELDS_NESTED = RXN_SEARCH_FIELDS.filter((field) => field !== 'stoichiometry');
 
 /** Reaction visible fields matching legacy `rxnOpts.visible`. */
 const RXN_VISIBLE = [
@@ -948,17 +951,17 @@ const CPD_VISIBLE = [
  * ```
  */
 export async function getReactions(opts: SolrQueryOpts = {}): Promise<SolrResponse<Reaction>> {
+    const nested = await hasNestedSchema('reactions');
     const mergedOpts: SolrQueryOpts = {
         limit: 25,
         offset: 0,
         sort: { field: 'id' },
-        searchFields: RXN_SEARCH_FIELDS,
+        searchFields: nested ? RXN_SEARCH_FIELDS_NESTED : RXN_SEARCH_FIELDS,
         visible: RXN_VISIBLE,
         ...opts,
     };
 
     // Reactions page is intentionally pinned to legacy Solr.
-    const nested = await hasNestedSchema('reactions');
     const queryOpts = nested
         ? {
             ...mergedOpts,
