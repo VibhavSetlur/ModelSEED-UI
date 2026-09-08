@@ -46,13 +46,19 @@ function formatHighlightedText(text: string, highlights: string[], baseOffset: n
 
     const pattern = highlights.map(escapeRegExp).join('|');
     const parts = text.split(new RegExp(`(${pattern})`, 'gi'));
-    return parts.flatMap((part, index) => {
+    const result: React.ReactNode[] = [];
+
+    parts.forEach((part, index) => {
         const offset = baseOffset + parts.slice(0, index).join('').length;
         const key = `${scope}-${offset}`;
-        return highlights.some((highlight) => part.toLowerCase() === highlight.toLowerCase())
-            ? [<mark key={key} style={markStyle}>{formatSubscripts(part, offset, key)}</mark>]
-            : formatSubscripts(part, offset, key);
+        if (highlights.some((highlight) => part.toLowerCase() === highlight.toLowerCase())) {
+            result.push(<mark key={key} style={markStyle}>{formatSubscripts(part, offset, key)}</mark>);
+        } else {
+            result.push(...formatSubscripts(part, offset, key));
+        }
     });
+
+    return result;
 }
 
 function formatChemicalText(text: string, highlights: string[]): React.ReactNode[] {
