@@ -1015,6 +1015,10 @@ const RXN_VISIBLE = [
     'stoichiometry', 'status', 'aliases', 'ec_numbers', 'is_obsolete',
     'is_transport', 'ontology', 'pathways', 'notes',
 ];
+const RXN_VISIBLE_NESTED = [
+    ...RXN_VISIBLE,
+    '[child childFilter=doc_type:stoichiometry limit=200]',
+];
 
 /**
  * Compound quick-search fields — must exist on Solr `compounds_staging`.
@@ -1065,7 +1069,7 @@ export async function getReactions(opts: SolrQueryOpts = {}): Promise<SolrRespon
         offset: 0,
         sort: { field: 'id' },
         searchFields: nested ? RXN_SEARCH_FIELDS_NESTED : RXN_SEARCH_FIELDS,
-        visible: RXN_VISIBLE,
+        visible: nested ? RXN_VISIBLE_NESTED : RXN_VISIBLE,
         ...opts,
     };
 
@@ -1079,8 +1083,10 @@ export async function getReactions(opts: SolrQueryOpts = {}): Promise<SolrRespon
     const url = buildSolrUrl('reactions', queryOpts);
     const res = await fetchSolr<Reaction>(url);
 
-    // Mark obsolete reactions (matching legacy logic)
+    // Normalize participants so the Equation renderer can associate a nested child match
+    // with its visible participant name; legacy serialized stoichiometry is normalized too.
     res.docs.forEach((doc) => {
+        doc.participants = normalizeStoichiometry(doc);
         if (doc.is_obsolete === '1') {
             doc.status = `${doc.status ?? ''} (and is obsolete)`.trim();
         }

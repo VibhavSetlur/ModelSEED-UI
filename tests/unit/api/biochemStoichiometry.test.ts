@@ -86,6 +86,23 @@ describe('Solr stoichiometry support', () => {
         expect(result.has_atom_mapping).toBe(true);
     });
 
+    it('normalizes participants returned from nested and legacy reaction lists for Equation rendering', async () => {
+        const nestedApi = await loadBiochemApi();
+        const nestedFetch = mockFetch({ reactions: true }, {
+            id: 'rxn00001', definition: 'Glucoraphanin <=> Glucose',
+            stoichiometry: [{ doc_type: 'stoichiometry', compound: 'cpd05331', coefficient: -1, participant_name: 'Glucoraphanin' }],
+        });
+        const nested = await nestedApi.getReactions();
+        expect(dataUrl(nestedFetch)).toContain(encodeURIComponent('[child childFilter=doc_type:stoichiometry limit=200]'));
+        expect(nested.docs[0].participants).toEqual([{ compound: 'cpd05331', coefficient: -1, compartment: 0, name: 'Glucoraphanin', is_reactant: true }]);
+
+        resetSolrSchemaCache();
+        const legacyApi = await loadBiochemApi();
+        mockFetch({ reactions: false }, { id: 'rxn00002', stoichiometry: '-1:cpd05331:0:0:"Glucoraphanin"' });
+        const legacy = await legacyApi.getReactions();
+        expect(legacy.docs[0].participants).toEqual([{ compound: 'cpd05331', coefficient: -1, compartment: 0, name: 'Glucoraphanin', is_reactant: true }]);
+    });
+
     it('keeps legacy URLs byte-identical and parses legacy participants', async () => {
         const api = await loadBiochemApi();
         const fetchMock = mockFetch({ reactions: false }, { id: 'rxn00001', stoichiometry: '-1:cpd00001:0:0:"H2O"' });
