@@ -13,11 +13,11 @@ const participant = {
     is_reactant: true,
 };
 
-function EquationCell({ equation, participants }: { equation: string; participants: Reaction['participants'] }) {
+function EquationCell({ equation, reaction }: { equation: string; reaction: Reaction }) {
     const apiRef = useGridApiContext();
     const filterModel = useGridSelector(apiRef, gridFilterModelSelector);
 
-    return <ChemicalEquation equation={equation} participants={participants} quickFilterValues={filterModel.quickFilterValues ?? []} />;
+    return <ChemicalEquation equation={equation} participants={reaction.participants} reaction={reaction} quickFilterValues={filterModel.quickFilterValues ?? []} />;
 }
 
 function renderReactionGrid(rows: Reaction[], quickFilterValues: string[]) {
@@ -25,7 +25,7 @@ function renderReactionGrid(rows: Reaction[], quickFilterValues: string[]) {
         field: 'definition',
         headerName: 'Equation',
         width: 600,
-        renderCell: (params) => <EquationCell equation={params.value} participants={params.row.participants} />,
+        renderCell: (params) => <EquationCell equation={params.value} reaction={params.row} />,
     }];
     const filterModel: GridFilterModel = { items: [], quickFilterValues };
 
@@ -37,7 +37,7 @@ function renderReactionGrid(rows: Reaction[], quickFilterValues: string[]) {
 }
 
 function renderEquation(quickFilterValues: string[], equation = 'cpd05331 + Glucoraphanin + H2O <=> Glucoraph', participants = [participant]) {
-    return renderReactionGrid([{ id: 'rxn00001', definition: equation, participants }] as Reaction[], quickFilterValues);
+    return renderReactionGrid([{ id: 'rxn00001', name: 'Example reaction', aliases: [], definition: equation, participants }] as unknown as Reaction[], quickFilterValues);
 }
 
 async function getProductionShapedNestedReaction(): Promise<Reaction> {
@@ -55,6 +55,7 @@ async function getProductionShapedNestedReaction(): Promise<Reaction> {
                     compound: ['cpd05331'],
                     coefficient: ['-1'],
                     participant_name: ['Glucoraphanin'],
+                    participant_aliases: ['Name: Glucosinolate;GRA'],
                 }],
             }] },
         }), { status: 200 }));
@@ -106,6 +107,24 @@ describe('ChemicalEquation', () => {
 
         expect(screen.getByRole('mark').textContent).toContain('Glucoraphanin');
         expect(screen.queryByText('cpd05331')).toBeNull();
+    });
+
+    it('maps participant aliases to the visible participant label', async () => {
+        const reaction = await getProductionShapedNestedReaction();
+        renderReactionGrid([reaction], ['GRA']);
+
+        expect(screen.getByRole('mark').textContent).toBe('Glucoraphanin');
+    });
+
+    it('never maps reaction metadata to a participant but marks literal Equation text', () => {
+        renderEquation(['rxn00001', 'Example', 'Reaction DB: unrelated']);
+        expect(screen.queryAllByRole('mark')).toHaveLength(0);
+
+        renderEquation(['Example'], 'Glucoraphanin + Example <=> Glucose');
+        expect(screen.getByRole('mark').textContent).toBe('Example');
+
+        const { container } = renderEquation(['Example'], 'Glucoraphanin + H2O <=> Glucose');
+        expect(container.querySelectorAll('mark')).toHaveLength(0);
     });
 
     it('preserves legacy equations, links, cleanup, and subscripts without a query', () => {

@@ -59,6 +59,18 @@ describe('Solr stoichiometry support', () => {
         ]);
     });
 
+    it('preserves nested participant aliases from scalar and array fields while legacy data remains valid', async () => {
+        const api = await loadBiochemApi();
+        expect(api.normalizeStoichiometry({ stoichiometry: [
+            { compound: 'cpd1', coefficient: -1, participant_name: 'One', participant_aliases: 'Name: First;Database: A1' },
+            { compound: 'cpd2', coefficient: 1, participant_name: 'Two', participant_aliases: ['Name: Second', 'Database: B2;B3'] },
+        ] })).toEqual([
+            { compound: 'cpd1', coefficient: -1, compartment: 0, name: 'One', is_reactant: true, aliases: ['Name: First', 'Database: A1'] },
+            { compound: 'cpd2', coefficient: 1, compartment: 0, name: 'Two', is_reactant: false, aliases: ['Name: Second', 'Database: B2', 'B3'] },
+        ]);
+        expect(api.normalizeStoichiometry({ stoichiometry: '-1:cpd1:0:0:"One"' })[0].aliases).toBeUndefined();
+    });
+
     it('parses legacy strings and round-trips them', async () => {
         const api = await loadBiochemApi();
         const source = '-1.5:cpd00001:0:0:"Water, liquid";2:cpd00002:1:0:"ATP";bad:cpd:0:0:"bad"';

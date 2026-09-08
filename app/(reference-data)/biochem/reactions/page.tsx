@@ -75,7 +75,7 @@ function parseSynonyms(aliases?: string[]): string[] {
     return nameEntry.split(';').map((s) => s.trim()).filter(Boolean);
 }
 
-function EquationCell({ equation, participants }: { equation: string; participants: Reaction['participants'] }) {
+function EquationCell({ equation, reaction }: { equation: string; reaction: Reaction }) {
     const apiRef = useGridApiContext();
     const filterModel = useGridSelector(apiRef, gridFilterModelSelector);
 
@@ -83,7 +83,8 @@ function EquationCell({ equation, participants }: { equation: string; participan
         <Box sx={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.5 }}>
             <ChemicalEquation
                 equation={equation}
-                participants={participants}
+                participants={reaction.participants}
+                reaction={reaction}
                 quickFilterValues={filterModel.quickFilterValues ?? []}
             />
         </Box>
@@ -300,7 +301,7 @@ export default function ReactionsPage() {
             flex: 1,
             minWidth: 280,
             sortable: false,
-            renderCell: (params) => <EquationCell equation={params.value} participants={params.row.participants} />,
+            renderCell: (params) => <EquationCell equation={params.value} reaction={params.row} />,
         },
         {
             field: 'is_transport',

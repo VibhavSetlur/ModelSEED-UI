@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import type { StoichiometryParticipant } from '@/lib/api/biochem';
+import type { Reaction, StoichiometryParticipant } from '@/lib/api/biochem';
 
 const markStyle = { backgroundColor: '#fff3cd', color: '#856404', padding: '0 2px', borderRadius: '2px' };
 
@@ -104,7 +104,19 @@ function getParticipantString(value: unknown): string | undefined {
     return undefined;
 }
 
-function getEquationHighlights(equation: string, participants: StoichiometryParticipant[] | unknown, quickFilterValues: string[] | unknown): string[] {
+function getAliasTerms(value: unknown): string[] {
+    return (Array.isArray(value) ? value : [value])
+        .flatMap((entry) => typeof entry === 'string' ? entry.split(';') : [])
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+            const separator = entry.indexOf(':');
+            return separator > 0 ? entry.slice(separator + 1).trim() : entry;
+        })
+        .filter(Boolean);
+}
+
+function getEquationHighlights(equation: string, participants: StoichiometryParticipant[] | unknown, reaction: Pick<Reaction, 'id' | 'name' | 'aliases'> | undefined, quickFilterValues: string[] | unknown): string[] {
     const terms = (Array.isArray(quickFilterValues) ? quickFilterValues : [])
         .flatMap((value) => String(value ?? '').split(/\s+/))
         .map((term) => term.trim())
@@ -116,13 +128,23 @@ function getEquationHighlights(equation: string, participants: StoichiometryPart
     for (const term of terms) {
         const termLower = term.toLowerCase();
         if (equationLower.includes(termLower)) highlights.add(term);
+        // Reaction identity is intentionally not mapped to a participant. A matching
+        // reaction ID/name/alias can only mark its literal Equation text above; a
+        // participant highlight still requires that participant's own response data.
+        const isReactionMetadataMatch = [reaction?.id, reaction?.name, ...getAliasTerms(reaction?.aliases)]
+            .some((value) => value?.toLowerCase().includes(termLower));
+        if (isReactionMetadataMatch) continue;
         for (const participant of safeParticipants) {
             if (!participant || typeof participant !== 'object') continue;
             const record = participant as Record<string, unknown>;
             const compound = getParticipantString(record.compound);
             const name = getParticipantString(record.name);
-            if (!name || !(compound?.toLowerCase().includes(termLower) || name.toLowerCase().includes(termLower))) continue;
+            const aliases = getAliasTerms(record.aliases);
+            const isParticipantMatch = [compound, name, ...aliases]
+                .some((value) => value?.toLowerCase().includes(termLower));
+            if (!name || !isParticipantMatch) continue;
             if (equationLower.includes(name.toLowerCase())) highlights.add(name);
+            else if (compound && equationLower.includes(compound.toLowerCase())) highlights.add(compound);
         }
     }
 
@@ -132,16 +154,17 @@ function getEquationHighlights(equation: string, participants: StoichiometryPart
 interface ChemicalEquationProps {
     equation: string | undefined | null;
     participants?: StoichiometryParticipant[];
+    reaction?: Pick<Reaction, 'id' | 'name' | 'aliases'>;
     quickFilterValues?: string[];
 }
 
-export default function ChemicalEquation({ equation, participants = [], quickFilterValues = [] }: ChemicalEquationProps) {
+export default function ChemicalEquation({ equation, participants = [], reaction, quickFilterValues = [] }: ChemicalEquationProps) {
     if (!equation) return 'N/A';
 
     const cleaned = equation
         .replace(/\[\d+\]/g, '')
         .replace(/\(1\)\s*/g, '');
-    const highlights = getEquationHighlights(cleaned, participants, quickFilterValues);
+    const highlights = getEquationHighlights(cleaned, participants, reaction, quickFilterValues);
 
     return (
         <span style={{ fontFamily: 'monospace' }}>

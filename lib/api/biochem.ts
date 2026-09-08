@@ -843,6 +843,8 @@ export interface StoichiometryParticipant {
     coefficient: number;
     compartment: number;
     name: string;
+    /** Aliases returned on nested stoichiometry children, when available. */
+    aliases?: string[];
     /** true when the participant is consumed (coefficient < 0). */
     is_reactant: boolean;
     charge?: number;
@@ -946,15 +948,22 @@ export function normalizeStoichiometry(doc: unknown): StoichiometryParticipant[]
             if (charge !== null) entry.charge = charge;
             const formula = unwrapSolrString(c.participant_formula);
             if (formula) entry.formula = formula;
+            const aliasesValue = c.participant_aliases ?? c.aliases;
+            const aliases = (Array.isArray(aliasesValue) ? aliasesValue : [aliasesValue])
+                .flatMap((alias) => typeof alias === 'string' ? alias.split(';') : [])
+                .map((alias) => alias.trim())
+                .filter(Boolean);
+            if (aliases.length > 0) entry.aliases = aliases;
             results.push(entry);
         }
         if (canSortByNestPath) results.sort((a, b) => a.nestPath! - b.nestPath!);
-        return results.map(({ compound, coefficient, compartment, name, is_reactant, charge, formula }) => ({
+        return results.map(({ compound, coefficient, compartment, name, aliases, is_reactant, charge, formula }) => ({
             compound,
             coefficient,
             compartment,
             name,
             is_reactant,
+            ...(aliases === undefined ? {} : { aliases }),
             ...(charge === undefined ? {} : { charge }),
             ...(formula === undefined ? {} : { formula }),
         }));
