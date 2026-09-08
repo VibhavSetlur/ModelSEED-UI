@@ -118,6 +118,8 @@ export interface SolrQueryOpts {
     filterModel?: GridFilterModel;
     /** Raw Solr `fq` clauses, appended in order (e.g. a nested-schema parent-doc filter). */
     filterQueries?: string[];
+    /** Include nested stoichiometry child fields in reaction quick search. */
+    nestedStoichiometryQuickSearch?: boolean;
 }
 
 /* ─── External DB Links ──────────────────────────────────────── */
@@ -347,6 +349,7 @@ function buildQuickSearchClause(
     searchFields: string[] | undefined,
     quickFilterValues: string[],
     quickFilterLogicOperator: 'and' | 'or',
+    nestedStoichiometryQuickSearch = false,
 ): string {
     if (query === '*' || query === '*:*') return '*';
 
@@ -369,6 +372,12 @@ function buildQuickSearchClause(
                         ? `${solrField}:${token}*`
                         : `${solrField}:*${token}*`;
                 });
+                if (nestedStoichiometryQuickSearch) {
+                    const wildcard = usePrefixOnly ? `${token}*` : `*${token}*`;
+                    fieldClauses.push(
+                        `({!parent which="${parentDocTypeFilter('reactions')}" v="doc_type:stoichiometry AND (compound:${wildcard} OR participant_name:${wildcard})"})`,
+                    );
+                }
                 return `(${fieldClauses.join(' OR ')})`;
             }
 
@@ -400,11 +409,12 @@ function buildSolrUrl(collection: BiochemCollection, opts: SolrQueryOpts = {}): 
         visible = [],
         filterModel,
         filterQueries = [],
+        nestedStoichiometryQuickSearch = false,
     } = opts;
 
     // Field list
     if (visible.length > 0) {
-        url += `&fl=${visible.join(',')}`;
+        url += `&fl=${encodeURIComponent(visible.join(','))}`;
     }
 
     // Explicit filter queries (e.g. nested-schema parent-doc filter)
@@ -447,6 +457,7 @@ function buildSolrUrl(collection: BiochemCollection, opts: SolrQueryOpts = {}): 
         searchFields,
         filterModel?.quickFilterValues ?? [],
         filterModel?.quickFilterLogicOperator ?? 'and',
+        nestedStoichiometryQuickSearch,
     );
 
     const finalClauses: string[] = [];
@@ -467,7 +478,7 @@ function buildSolrUrl(collection: BiochemCollection, opts: SolrQueryOpts = {}): 
     // Sort
     if (sort) {
         const dir = sort.desc ? 'desc' : 'asc';
-        url += `&sort=${sort.field} ${dir}`;
+        url += `&sort=${encodeURIComponent(`${sort.field} ${dir}`)}`;
     }
 
     return url;
@@ -488,8 +499,13 @@ async function fetchSolr<T>(url: string): Promise<SolrResponse<T>> {
         }
         throw new Error(`Solr request failed: ${res.status}${detail}`);
     }
-    const json = await res.json();
-    return json.response as SolrResponse<T>;
+    const json = await res.json() as { response?: Partial<SolrResponse<T>> };
+    const response = json?.response;
+    return {
+        numFound: typeof response?.numFound === 'number' ? response.numFound : 0,
+        start: typeof response?.start === 'number' ? response.start : 0,
+        docs: Array.isArray(response?.docs) ? response.docs : [],
+    };
 }
 
 /**
@@ -988,7 +1004,7 @@ const SYNONYM_FIELD_ALIAS = 'aliases';
 const MIN_WILDCARD_QUERY_LENGTH = 3;
 
 /** Reaction search fields matching legacy `rxn_sFields`. */
-const RXN_SEARCH_FIELDS = ['id', 'name', 'status', 'ec_numbers', 'aliases', 'pathways', 'stoichiometry', 'notes'];
+const RXN_SEARCH_FIELDS = ['id', 'name', 'definition', 'status', 'ec_numbers', 'aliases', 'pathways', 'stoichiometry', 'notes'];
 
 /** Solr 9 nested stoichiometry is a child path, not a queryable parent field; querying it yields HTTP 400 "undefined field stoichiometry". */
 const RXN_SEARCH_FIELDS_NESTED = RXN_SEARCH_FIELDS.filter((field) => field !== 'stoichiometry');
@@ -1020,6 +1036,9 @@ const CPD_VISIBLE = [
  * 
  * Queries the ModelSEED biochemistry database for reactions with support for
  * advanced filtering, pagination, and sorting. Main UI queries are Solr-backed.
+ * The Equation UI field maps to `definition`; nested schemas parent-scope every list
+ * query and block-join compound/participant quick-search terms, while legacy schemas
+ * retain their flat `stoichiometry` field. User terms are escaped before wildcards.
  * 
  * @param opts - Query options (query, limit, offset, sort, filterModel)
  * @returns Promise resolving to paginated reaction results
@@ -1053,6 +1072,7 @@ export async function getReactions(opts: SolrQueryOpts = {}): Promise<SolrRespon
     const queryOpts = nested
         ? {
             ...mergedOpts,
+            nestedStoichiometryQuickSearch: true,
             filterQueries: [...(mergedOpts.filterQueries ?? []), parentDocTypeFilter('reactions')],
         }
         : mergedOpts;
@@ -1062,7 +1082,7 @@ export async function getReactions(opts: SolrQueryOpts = {}): Promise<SolrRespon
     // Mark obsolete reactions (matching legacy logic)
     res.docs.forEach((doc) => {
         if (doc.is_obsolete === '1') {
-            doc.status += ' (and is obsolete)';
+            doc.status = `${doc.status ?? ''} (and is obsolete)`.trim();
         }
     });
 
@@ -1124,7 +1144,7 @@ export async function getReactionsFromModelseedApi(
     });
     res.docs.forEach((doc) => {
         if (doc.is_obsolete === '1') {
-            doc.status += ' (and is obsolete)';
+            doc.status = `${doc.status ?? ''} (and is obsolete)`.trim();
         }
     });
     return res;
@@ -1260,7 +1280,9 @@ async function getCompoundsByIdsWithFields(ids: string[], fields: string[]): Pro
  * Find reactions containing a given compound.
  * 
  * Searches for reactions where the specified compound appears as a reactant
- * or product. Useful for exploring compound participation in metabolism.
+ * or product. Useful for exploring compound participation in metabolism. Nested schemas
+ * block-join valid identifiers to child stoichiometry; legacy schemas search escaped
+ * flat equations. URL values and user input are encoded/escaped before sending.
  * 
  * @param cpdId - Compound ID to search for
  * @param opts - Query options (limit, offset, sort)
@@ -1282,16 +1304,19 @@ export async function findReactionsForCompound(
 
     // Reverse compound lookup remains Solr-backed for now.
     const nested = await hasNestedSchema('reactions');
-    const query = nested && /^[A-Za-z0-9_]+$/.test(cpdId)
-        ? `{!parent which="doc_type:reaction"}doc_type:stoichiometry AND compound:${cpdId}`
-        : `equation:*${cpdId}*`;
-    let url = `${solrCorpusEndpoint('reactions')}/select?wt=json&q=${query}&fl=*`;
+    const token = toSolrWildcardToken(cpdId);
+    const query = nested
+        ? /^[A-Za-z0-9_]+$/.test(cpdId)
+            ? `{!parent which="doc_type:reaction" v="doc_type:stoichiometry AND compound:${escapeSolrTerm(cpdId)}"}`
+            : `{!parent which="doc_type:reaction" v="doc_type:stoichiometry AND (compound:*${token}* OR participant_name:*${token}*)"}`
+        : `equation:*${token}*`;
+    let url = `${solrCorpusEndpoint('reactions')}/select?wt=json&q=${encodeURIComponent(query)}&fl=${encodeURIComponent('*')}`;
     if (nested) url += `&fq=${encodeURIComponent(parentDocTypeFilter('reactions'))}`;
     if (limit) url += `&rows=${limit}`;
     if (offset) url += `&start=${offset}`;
     if (sort) {
         const dir = sort.desc ? 'desc' : 'asc';
-        url += `&sort=${sort.field} ${dir}`;
+        url += `&sort=${encodeURIComponent(`${sort.field} ${dir}`)}`;
     }
 
     return fetchSolr<Reaction>(url);
