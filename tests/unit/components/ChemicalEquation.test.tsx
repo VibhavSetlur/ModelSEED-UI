@@ -110,6 +110,32 @@ describe('ChemicalEquation', () => {
         expect(screen.getByRole('mark').textContent).toBe('Glucoraphanin');
     });
 
+    it('maps array and legacy participant metadata to only rendered participant tokens', () => {
+        const reaction = {
+            id: 'rxn05331',
+            name: 'Glucoraphanin conversion',
+            aliases: ['Reaction DB: unrelated'],
+            definition: 'Glucoraphanin + cpd00001 <=> Product',
+            participants: [
+                {
+                    compound: ['cpd05331'],
+                    participant_name: ['Glucoraphanin'],
+                    participant_aliases: [['Name: GRA;glucosinolate']],
+                },
+                {
+                    compound: 'cpd00001',
+                    name: 'Legacy product',
+                    aliases: ['Name: legacy-alias'],
+                },
+            ],
+        } as unknown as Reaction;
+
+        renderReactionGrid([reaction], ['GRA', 'legacy-alias']);
+
+        expect(screen.getAllByRole('mark').map((mark) => mark.textContent)).toEqual(expect.arrayContaining(['Glucoraphanin', 'cpd00001']));
+        expect(screen.queryByRole('mark', { name: 'Product' })).toBeNull();
+    });
+
     it('never maps reaction metadata to a participant but marks literal Equation text', () => {
         renderEquation(['rxn00001', 'Example', 'Reaction DB: unrelated']);
         expect(screen.queryAllByRole('mark')).toHaveLength(0);
