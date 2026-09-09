@@ -85,13 +85,13 @@ describe('ChemicalEquation', () => {
         expect(screen.getByRole('link', { name: 'cpd05331' }).getAttribute('href')).toBe('/biochem/compounds/cpd05331');
     });
 
-    it('renders a production-shaped nested search result with the matched participant name marked', async () => {
+    it('renders a production nested Solr result through getReactions and EquationCell with only Glucoraphanin marked', async () => {
         const reaction = await getProductionShapedNestedReaction();
         renderReactionGrid([reaction], ['cpd05331']);
 
-        const mark = document.querySelector('mark');
-        expect(mark).not.toBeNull();
-        expect(mark?.textContent).toBe('Glucoraphanin');
+        const marks = screen.getAllByRole('mark');
+        expect(marks).toHaveLength(1);
+        expect(marks[0].textContent).toBe('Glucoraphanin');
         expect(screen.getByRole('gridcell', { name: /Glucoraphanin \+ H 2 O <=> Glucose/ }).textContent).toBe('Glucoraphanin + H2O <=> Glucose');
         expect(screen.queryByRole('link', { name: 'cpd05331' })).toBeNull();
     });

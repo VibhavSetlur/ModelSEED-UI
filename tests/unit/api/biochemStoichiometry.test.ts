@@ -108,15 +108,31 @@ describe('Solr stoichiometry support', () => {
         expect(result.has_atom_mapping).toBe(true);
     });
 
-    it('normalizes participants returned from nested and legacy reaction lists for Equation rendering', async () => {
+    it('projects and normalizes production nested children for Equation rendering', async () => {
         const nestedApi = await loadBiochemApi();
         const nestedFetch = mockFetch({ reactions: true }, {
-            id: 'rxn00001', definition: 'Glucoraphanin <=> Glucose',
-            stoichiometry: [{ doc_type: ['stoichiometry'], compound: ['cpd05331'], coefficient: ['-1'], participant_name: ['Glucoraphanin'] }],
+            id: 'rxn27060', definition: 'Glucoraphanin + H2O <=> Glucose',
+            stoichiometry: [{
+                id: 'rxn27060_stoichiometry_0', doc_type: ['stoichiometry'],
+                compound: ['cpd05331'], coefficient: ['-1'], compartment: ['0'],
+                participant_name: ['Glucoraphanin'], participant_aliases: ['Name: Glucosinolate;GRA'],
+                _nest_path_: ['/stoichiometry#0'],
+            }],
         });
         const nested = await nestedApi.getReactions();
-        expect(dataUrl(nestedFetch)).toContain(encodeURIComponent('[child childFilter=doc_type:stoichiometry limit=200]'));
-        expect(nested.docs[0].participants).toEqual([{ compound: 'cpd05331', coefficient: -1, compartment: 0, name: 'Glucoraphanin', is_reactant: true }]);
+        const nestedUrl = new URL(dataUrl(nestedFetch));
+        expect(nestedUrl.searchParams.get('fl')).toBe([
+            'name', 'id', 'definition', 'deltag', 'deltagerr', 'reversibility',
+            'stoichiometry', 'status', 'aliases', 'ec_numbers', 'is_obsolete',
+            'is_transport', 'ontology', 'pathways', 'notes',
+            'compound', 'coefficient', 'compartment', 'is_reactant', 'participant_name',
+            'participant_aliases', 'aliases', 'doc_type', '_nest_path_',
+            '[child childFilter=doc_type:stoichiometry limit=200]',
+        ].join(','));
+        expect(nested.docs[0].participants).toEqual([{
+            compound: 'cpd05331', coefficient: -1, compartment: 0, name: 'Glucoraphanin',
+            aliases: ['Name: Glucosinolate', 'GRA'], is_reactant: true,
+        }]);
 
         resetSolrSchemaCache();
         const legacyApi = await loadBiochemApi();

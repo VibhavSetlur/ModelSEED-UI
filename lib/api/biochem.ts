@@ -1044,8 +1044,13 @@ const RXN_VISIBLE = [
     'stoichiometry', 'status', 'aliases', 'ec_numbers', 'is_obsolete',
     'is_transport', 'ontology', 'pathways', 'notes',
 ];
+// Solr child transformers only return fields also present in the parent `fl` list.
+// Include the stored stoichiometry fields needed by Equation highlighting before
+// requesting the matching child documents.
 const RXN_VISIBLE_NESTED = [
     ...RXN_VISIBLE,
+    'compound', 'coefficient', 'compartment', 'is_reactant', 'participant_name',
+    'participant_aliases', 'aliases', 'doc_type', '_nest_path_',
     '[child childFilter=doc_type:stoichiometry limit=200]',
 ];
 
