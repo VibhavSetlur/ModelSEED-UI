@@ -85,13 +85,13 @@ describe('ChemicalEquation', () => {
         expect(screen.getByRole('link', { name: 'cpd05331' }).getAttribute('href')).toBe('/biochem/compounds/cpd05331');
     });
 
-    it('renders a production-shaped nested search result with the matched participant name marked', async () => {
+    it('renders a production nested Solr result through getReactions and EquationCell with only Glucoraphanin marked', async () => {
         const reaction = await getProductionShapedNestedReaction();
         renderReactionGrid([reaction], ['cpd05331']);
 
-        const mark = document.querySelector('mark');
-        expect(mark).not.toBeNull();
-        expect(mark?.textContent).toBe('Glucoraphanin');
+        const marks = screen.getAllByRole('mark');
+        expect(marks).toHaveLength(1);
+        expect(marks[0].textContent).toBe('Glucoraphanin');
         expect(screen.getByRole('gridcell', { name: /Glucoraphanin \+ H 2 O <=> Glucose/ }).textContent).toBe('Glucoraphanin + H2O <=> Glucose');
         expect(screen.queryByRole('link', { name: 'cpd05331' })).toBeNull();
     });
@@ -108,6 +108,25 @@ describe('ChemicalEquation', () => {
         renderReactionGrid([reaction], ['GRA']);
 
         expect(screen.getByRole('mark').textContent).toBe('Glucoraphanin');
+    });
+
+    it('maps nested, pipe-delimited aliases to the rendered participant without marking another product', () => {
+        const reaction = {
+            id: 'rxn05331',
+            name: 'unrelated reaction metadata',
+            aliases: ['Registry: unrelated-product'],
+            definition: 'Glucoraphanin + H2O <=> Glucose',
+            participants: [{
+                compound: [['cpd05331']],
+                participant_name: [['Glucoraphanin']],
+                participant_aliases: [['Name: GRA|Registry: cpd05331-alias']],
+            }],
+        } as unknown as Reaction;
+
+        renderReactionGrid([reaction], ['cpd05331-alias']);
+
+        expect(screen.getByRole('mark').textContent).toBe('Glucoraphanin');
+        expect(screen.queryByRole('mark', { name: 'Glucose' })).toBeNull();
     });
 
     it('maps array and legacy participant metadata to only rendered participant tokens', () => {

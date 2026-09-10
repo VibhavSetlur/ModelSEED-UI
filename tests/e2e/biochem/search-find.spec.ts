@@ -61,6 +61,18 @@ test.describe('Find in Page Search', () => {
         expect(await highlights.count()).toBeGreaterThan(0);
     });
 
+    test('cpd05331 marks only Glucoraphanin in the visible Equation result', async ({ page }) => {
+        const searchBox = page.locator('input[placeholder*="Find in"]').first();
+        await searchBox.fill('cpd05331');
+        await searchBox.press('Enter');
+
+        const equationCell = page.locator('[role="gridcell"]', { hasText: 'Glucoraphanin' }).filter({ hasText: '<=>' }).first();
+        await expect(equationCell).toBeVisible({ timeout: 30000 });
+        const marks = equationCell.locator('mark');
+        await expect(marks).toHaveCount(1, { timeout: 10000 });
+        await expect(marks).toHaveText('Glucoraphanin');
+    });
+
     test('highlighted mark text matches the search term (case-insensitive)', async ({ page }) => {
         const searchBox = page.locator('input[placeholder*="Find in"]').first();
         await searchBox.fill('atp');

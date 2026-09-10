@@ -108,7 +108,7 @@ function getStringTerms(value: unknown): string[] {
 
 function getAliasTerms(value: unknown): string[] {
     return getStringTerms(value)
-        .flatMap((entry) => entry.split(';'))
+        .flatMap((entry) => entry.split(/[;|]/))
         .map((entry) => entry.trim())
         .filter(Boolean)
         .map((entry) => {
@@ -118,8 +118,27 @@ function getAliasTerms(value: unknown): string[] {
         .filter(Boolean);
 }
 
-function getParticipantDisplayTerms(record: Record<string, unknown>): string[] {
-    return getStringTerms(record.participant_name ?? record.name ?? record.compound);
+interface ParticipantAssociation {
+    searchTerms: string[];
+    displayTerms: string[];
+}
+
+function normalizeParticipantAssociation(participant: unknown): ParticipantAssociation | null {
+    if (!participant || typeof participant !== 'object') return null;
+    const record = participant as Record<string, unknown>;
+    const compoundTerms = getStringTerms(record.compound);
+    const displayTerms = getStringTerms(record.participant_name ?? record.name ?? record.compound);
+    if (displayTerms.length === 0) return null;
+    return {
+        searchTerms: [
+            ...compoundTerms,
+            ...getStringTerms(record.participant_name),
+            ...getStringTerms(record.name),
+            ...getAliasTerms(record.participant_aliases),
+            ...getAliasTerms(record.aliases),
+        ],
+        displayTerms: [...displayTerms, ...compoundTerms],
+    };
 }
 
 function getEquationHighlights(equation: string, participants: StoichiometryParticipant[] | unknown, quickFilterValues: string[] | unknown): string[] {
@@ -127,7 +146,9 @@ function getEquationHighlights(equation: string, participants: StoichiometryPart
         .flatMap((value) => value.split(/\s+/))
         .map((term) => term.trim())
         .filter(Boolean);
-    const safeParticipants = Array.isArray(participants) ? participants : [];
+    const associations = (Array.isArray(participants) ? participants : [])
+        .map(normalizeParticipantAssociation)
+        .filter((association): association is ParticipantAssociation => association !== null);
     const equationLower = equation.toLowerCase();
     const highlights = new Set<string>();
 
@@ -136,23 +157,10 @@ function getEquationHighlights(equation: string, participants: StoichiometryPart
         if (equationLower.includes(termLower)) highlights.add(term);
         // Reaction metadata is intentionally not mapped to a participant. It can
         // only mark its literal Equation text through the check above.
-        for (const participant of safeParticipants) {
-            if (!participant || typeof participant !== 'object') continue;
-            const record = participant as Record<string, unknown>;
-            const compoundTerms = getStringTerms(record.compound);
-            const metadataTerms = [
-                ...compoundTerms,
-                ...getStringTerms(record.participant_name),
-                ...getStringTerms(record.name),
-                ...getAliasTerms(record.participant_aliases),
-                ...getAliasTerms(record.aliases),
-            ];
-            if (!metadataTerms.some((value) => value.toLowerCase().includes(termLower))) continue;
-            for (const displayTerm of getParticipantDisplayTerms(record)) {
+        for (const association of associations) {
+            if (!association.searchTerms.some((value) => value.toLowerCase().includes(termLower))) continue;
+            for (const displayTerm of association.displayTerms) {
                 if (equationLower.includes(displayTerm.toLowerCase())) highlights.add(displayTerm);
-            }
-            for (const compound of compoundTerms) {
-                if (equationLower.includes(compound.toLowerCase())) highlights.add(compound);
             }
         }
     }

@@ -63,10 +63,10 @@ describe('Solr stoichiometry support', () => {
         const api = await loadBiochemApi();
         expect(api.normalizeStoichiometry({ stoichiometry: [
             { compound: 'cpd1', coefficient: -1, participant_name: 'One', participant_aliases: 'Name: First;Database: A1' },
-            { compound: 'cpd2', coefficient: 1, participant_name: 'Two', participant_aliases: ['Name: Second', 'Database: B2;B3'] },
+            { compound: 'cpd2', coefficient: 1, participant_name: 'Two', participant_aliases: ['Name: Second', ['Database: B2;B3|Registry: C4']] },
         ] })).toEqual([
             { compound: 'cpd1', coefficient: -1, compartment: 0, name: 'One', is_reactant: true, aliases: ['Name: First', 'Database: A1'] },
-            { compound: 'cpd2', coefficient: 1, compartment: 0, name: 'Two', is_reactant: false, aliases: ['Name: Second', 'Database: B2', 'B3'] },
+            { compound: 'cpd2', coefficient: 1, compartment: 0, name: 'Two', is_reactant: false, aliases: ['Name: Second', 'Database: B2', 'B3', 'Registry: C4'] },
         ]);
         expect(api.normalizeStoichiometry({ stoichiometry: '-1:cpd1:0:0:"One"' })[0].aliases).toBeUndefined();
     });
@@ -108,15 +108,31 @@ describe('Solr stoichiometry support', () => {
         expect(result.has_atom_mapping).toBe(true);
     });
 
-    it('normalizes participants returned from nested and legacy reaction lists for Equation rendering', async () => {
+    it('projects and normalizes production nested children for Equation rendering', async () => {
         const nestedApi = await loadBiochemApi();
         const nestedFetch = mockFetch({ reactions: true }, {
-            id: 'rxn00001', definition: 'Glucoraphanin <=> Glucose',
-            stoichiometry: [{ doc_type: ['stoichiometry'], compound: ['cpd05331'], coefficient: ['-1'], participant_name: ['Glucoraphanin'] }],
+            id: 'rxn27060', definition: 'Glucoraphanin + H2O <=> Glucose',
+            stoichiometry: [{
+                id: 'rxn27060_stoichiometry_0', doc_type: ['stoichiometry'],
+                compound: ['cpd05331'], coefficient: ['-1'], compartment: ['0'],
+                participant_name: ['Glucoraphanin'], participant_aliases: ['Name: Glucosinolate;GRA'],
+                _nest_path_: ['/stoichiometry#0'],
+            }],
         });
         const nested = await nestedApi.getReactions();
-        expect(dataUrl(nestedFetch)).toContain(encodeURIComponent('[child childFilter=doc_type:stoichiometry limit=200]'));
-        expect(nested.docs[0].participants).toEqual([{ compound: 'cpd05331', coefficient: -1, compartment: 0, name: 'Glucoraphanin', is_reactant: true }]);
+        const nestedUrl = new URL(dataUrl(nestedFetch));
+        expect(nestedUrl.searchParams.get('fl')).toBe([
+            'name', 'id', 'definition', 'deltag', 'deltagerr', 'reversibility',
+            'stoichiometry', 'status', 'aliases', 'ec_numbers', 'is_obsolete',
+            'is_transport', 'ontology', 'pathways', 'notes',
+            'compound', 'coefficient', 'compartment', 'is_reactant', 'participant_name',
+            'participant_aliases', 'aliases', 'doc_type', '_nest_path_',
+            '[child childFilter=doc_type:stoichiometry limit=200]',
+        ].join(','));
+        expect(nested.docs[0].participants).toEqual([{
+            compound: 'cpd05331', coefficient: -1, compartment: 0, name: 'Glucoraphanin',
+            aliases: ['Name: Glucosinolate', 'GRA'], is_reactant: true,
+        }]);
 
         resetSolrSchemaCache();
         const legacyApi = await loadBiochemApi();
