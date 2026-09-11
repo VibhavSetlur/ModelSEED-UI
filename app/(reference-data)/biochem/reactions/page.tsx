@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { DataGrid, GridColDef, GridPaginationModel, GridSortModel, GridFilterModel } from '@mui/x-data-grid';
+import { DataGrid, gridFilterModelSelector, GridColDef, GridPaginationModel, GridSortModel, GridFilterModel, useGridApiContext, useGridSelector } from '@mui/x-data-grid';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -73,6 +73,22 @@ function parseSynonyms(aliases?: string[]): string[] {
     const last = aliases[aliases.length - 1];
     const nameEntry = last.replace('Name:', '').replace(/"/g, '');
     return nameEntry.split(';').map((s) => s.trim()).filter(Boolean);
+}
+
+export function EquationCell({ equation, reaction }: { equation: string; reaction: Reaction }) {
+    const apiRef = useGridApiContext();
+    const filterModel = useGridSelector(apiRef, gridFilterModelSelector);
+
+    return (
+        <Box sx={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.5 }}>
+            <ChemicalEquation
+                equation={equation}
+                participants={reaction.participants}
+                reaction={reaction}
+                quickFilterValues={filterModel.quickFilterValues ?? []}
+            />
+        </Box>
+    );
 }
 
 function SynonymsCell({ synonyms }: { synonyms: string[] }) {
@@ -285,11 +301,7 @@ export default function ReactionsPage() {
             flex: 1,
             minWidth: 280,
             sortable: false,
-            renderCell: (params) => (
-                <Box sx={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.5 }}>
-                    <ChemicalEquation equation={params.value} />
-                </Box>
-            ),
+            renderCell: (params) => <EquationCell equation={params.value} reaction={params.row} />,
         },
         {
             field: 'is_transport',

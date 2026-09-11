@@ -843,16 +843,37 @@ export interface StoichiometryParticipant {
     coefficient: number;
     compartment: number;
     name: string;
+    /** Aliases returned on nested stoichiometry children, when available. */
+    aliases?: string[];
     /** true when the participant is consumed (coefficient < 0). */
     is_reactant: boolean;
     charge?: number;
     formula?: string;
 }
 
+/** Returns the first meaningful scalar from a Solr scalar-or-array field. */
+function unwrapSolrScalar(value: unknown): string | number | undefined {
+    for (const candidate of Array.isArray(value) ? value : [value]) {
+        if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate;
+        if (typeof candidate === 'number' && Number.isFinite(candidate)) return candidate;
+    }
+    return undefined;
+}
+
+function unwrapSolrString(value: unknown): string | undefined {
+    const scalar = unwrapSolrScalar(value);
+    return scalar === undefined ? undefined : String(scalar);
+}
+
+/** Flattens Solr scalar-or-nested-array fields into meaningful string values. */
+function unwrapSolrStrings(value: unknown): string[] {
+    if (Array.isArray(value)) return value.flatMap(unwrapSolrStrings);
+    return unwrapSolrString(value) ? [unwrapSolrString(value)!] : [];
+}
+
 /** Coerces a Solr thermodynamics child's `energy`/`error` value to a finite number or null. */
 function coerceThermodynamicsNumber(value: unknown): number | null {
-    const raw = Array.isArray(value) ? value[0] : value;
-    const num = Number(raw);
+    const num = Number(unwrapSolrScalar(value));
     return Number.isFinite(num) ? num : null;
 }
 
@@ -912,35 +933,43 @@ export function normalizeStoichiometry(doc: unknown): StoichiometryParticipant[]
         for (const child of children) {
             if (!child || typeof child !== 'object') continue;
             const c = child as Record<string, unknown>;
-            if (typeof c.doc_type === 'string' && c.doc_type !== 'stoichiometry') continue;
-            if (typeof c.compound !== 'string' || c.compound.length === 0) continue;
+            const docType = unwrapSolrString(c.doc_type);
+            if (docType && docType !== 'stoichiometry') continue;
+            const compound = unwrapSolrString(c.compound);
+            if (!compound) continue;
             const coefficient = coerceThermodynamicsNumber(c.coefficient);
             if (coefficient === null) continue;
-            const nestMatch = typeof c._nest_path_ === 'string'
-                ? /\/stoichiometry#(\d+)$/.exec(c._nest_path_)
-                : null;
+            const nestPathValue = unwrapSolrString(c._nest_path_);
+            const nestMatch = nestPathValue ? /\/stoichiometry#(\d+)$/.exec(nestPathValue) : null;
             if (!nestMatch) canSortByNestPath = false;
             const entry: StoichiometryParticipant & { nestPath?: number } = {
-                compound: c.compound,
+                compound,
                 coefficient,
                 compartment: coerceThermodynamicsNumber(c.compartment) ?? 0,
-                name: typeof c.participant_name === 'string' && c.participant_name.length > 0
-                    ? c.participant_name : c.compound,
+                name: unwrapSolrString(c.participant_name) ?? compound,
                 is_reactant: typeof c.is_reactant === 'boolean' ? c.is_reactant : coefficient < 0,
                 nestPath: nestMatch ? Number(nestMatch[1]) : undefined,
             };
             const charge = coerceThermodynamicsNumber(c.participant_charge);
             if (charge !== null) entry.charge = charge;
-            if (typeof c.participant_formula === 'string' && c.participant_formula.length > 0) entry.formula = c.participant_formula;
+            const formula = unwrapSolrString(c.participant_formula);
+            if (formula) entry.formula = formula;
+            const aliasesValue = c.participant_aliases ?? c.aliases;
+            const aliases = unwrapSolrStrings(aliasesValue)
+                .flatMap((alias) => alias.split(/[;|]/))
+                .map((alias) => alias.trim())
+                .filter(Boolean);
+            if (aliases.length > 0) entry.aliases = aliases;
             results.push(entry);
         }
         if (canSortByNestPath) results.sort((a, b) => a.nestPath! - b.nestPath!);
-        return results.map(({ compound, coefficient, compartment, name, is_reactant, charge, formula }) => ({
+        return results.map(({ compound, coefficient, compartment, name, aliases, is_reactant, charge, formula }) => ({
             compound,
             coefficient,
             compartment,
             name,
             is_reactant,
+            ...(aliases === undefined ? {} : { aliases }),
             ...(charge === undefined ? {} : { charge }),
             ...(formula === undefined ? {} : { formula }),
         }));
@@ -1015,6 +1044,15 @@ const RXN_VISIBLE = [
     'stoichiometry', 'status', 'aliases', 'ec_numbers', 'is_obsolete',
     'is_transport', 'ontology', 'pathways', 'notes',
 ];
+// Solr child transformers only return fields also present in the parent `fl` list.
+// Include the stored stoichiometry fields needed by Equation highlighting before
+// requesting the matching child documents.
+const RXN_VISIBLE_NESTED = [
+    ...RXN_VISIBLE,
+    'compound', 'coefficient', 'compartment', 'is_reactant', 'participant_name',
+    'participant_aliases', 'aliases', 'doc_type', '_nest_path_',
+    '[child childFilter=doc_type:stoichiometry limit=200]',
+];
 
 /**
  * Compound quick-search fields — must exist on Solr `compounds_staging`.
@@ -1065,7 +1103,7 @@ export async function getReactions(opts: SolrQueryOpts = {}): Promise<SolrRespon
         offset: 0,
         sort: { field: 'id' },
         searchFields: nested ? RXN_SEARCH_FIELDS_NESTED : RXN_SEARCH_FIELDS,
-        visible: RXN_VISIBLE,
+        visible: nested ? RXN_VISIBLE_NESTED : RXN_VISIBLE,
         ...opts,
     };
 
@@ -1079,8 +1117,10 @@ export async function getReactions(opts: SolrQueryOpts = {}): Promise<SolrRespon
     const url = buildSolrUrl('reactions', queryOpts);
     const res = await fetchSolr<Reaction>(url);
 
-    // Mark obsolete reactions (matching legacy logic)
+    // Normalize participants so the Equation renderer can associate a nested child match
+    // with its visible participant name; legacy serialized stoichiometry is normalized too.
     res.docs.forEach((doc) => {
+        doc.participants = normalizeStoichiometry(doc);
         if (doc.is_obsolete === '1') {
             doc.status = `${doc.status ?? ''} (and is obsolete)`.trim();
         }
