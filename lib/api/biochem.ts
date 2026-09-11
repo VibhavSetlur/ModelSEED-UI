@@ -26,6 +26,35 @@ export interface ThermodynamicsRecord {
     operator?: string;
 }
 
+export interface ThermoEvidence {
+    grade?: string;
+    assessment?: string;
+    source?: string;
+    cross_source?: string;
+}
+
+export interface CompoundPka {
+    source_name: string;
+    pka_kind?: string;
+    pka_number: number[];
+}
+
+export function normalizeThermoEvidence(value: unknown): ThermoEvidence[] | undefined {
+    const entries = Array.isArray(value) ? value : value == null ? [] : [value];
+    const evidence = entries.flatMap((entry) => {
+        if (!entry || typeof entry !== 'object') return [];
+        const record = entry as Record<string, unknown>;
+        const normalized: ThermoEvidence = {};
+        for (const field of ['grade', 'assessment', 'source'] as const) {
+            if (typeof record[field] === 'string') normalized[field] = record[field];
+        }
+        const crossSource = record.cross_source ?? record['cross-source'];
+        if (typeof crossSource === 'string') normalized.cross_source = crossSource;
+        return Object.keys(normalized).length > 0 ? [normalized] : [];
+    });
+    return evidence.length > 0 ? evidence : undefined;
+}
+
 export interface Reaction {
     id: string;
     name: string;
@@ -49,6 +78,7 @@ export interface Reaction {
     linked_reaction?: string;
     source?: string;
     thermodynamics?: ThermodynamicsRecord[];
+    thermo_evidence?: ThermoEvidence[];
     n_sources_thermodynamics?: number;
     sources_agree_direction?: boolean;
     atom_mapping?: string[];
@@ -78,6 +108,8 @@ export interface Compound {
     is_obsolete?: string;
     pka?: string[];
     pkb?: string[];
+    pkas?: CompoundPka[];
+    thermo_evidence?: ThermoEvidence[];
     source?: string;
     structure?: string;
     thermodynamics?: ThermodynamicsRecord[];
@@ -501,10 +533,15 @@ async function fetchSolr<T>(url: string): Promise<SolrResponse<T>> {
     }
     const json = await res.json() as { response?: Partial<SolrResponse<T>> };
     const response = json?.response;
+    const docs = Array.isArray(response?.docs) ? response.docs : [];
     return {
         numFound: typeof response?.numFound === 'number' ? response.numFound : 0,
         start: typeof response?.start === 'number' ? response.start : 0,
-        docs: Array.isArray(response?.docs) ? response.docs : [],
+        docs: docs.map((doc) => {
+            const record = doc as T & { thermo_evidence?: unknown };
+            if (!('thermo_evidence' in record)) return doc;
+            return { ...record, thermo_evidence: normalizeThermoEvidence(record.thermo_evidence) } as T;
+        }),
     };
 }
 
