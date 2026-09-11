@@ -72,7 +72,7 @@ describe('biochemistry detail thermodynamics tooltips', () => {
         await expectThermodynamicsTooltips();
     });
 
-    it('explains thermodynamics evidence on the reaction detail page', async () => {
+    it('shows the LLM council direction separately from thermodynamics evidence on the reaction detail page', async () => {
         mockUseQuery.mockReturnValue({
             data: {
                 id: 'rxn00001',
@@ -82,6 +82,7 @@ describe('biochemistry detail thermodynamics tooltips', () => {
                 reversibility: '=',
                 is_obsolete: '0',
                 thermo_evidence: [thermoEvidence],
+                llm_council_proposals: [{ source_name: 'LLMs', proposed_direction: '>' }],
             },
             isLoading: false,
             error: null,
@@ -89,6 +90,10 @@ describe('biochemistry detail thermodynamics tooltips', () => {
 
         render(<ReactionDetailPage />);
 
+        expect(screen.getByText('LLM council proposal')).toBeTruthy();
+        expect(screen.getByText('LLMs')).toBeTruthy();
+        expect(screen.getByText('Proposed direction: >')).toBeTruthy();
+        expect(screen.queryByText('ΔG (kcal/mol)')).toBeNull();
         await expectThermodynamicsTooltips();
     });
 });

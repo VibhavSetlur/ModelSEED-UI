@@ -347,6 +347,15 @@ export default function ReactionDetailPage() {
                         <Typography variant="body2">{rxn.reversibility}</Typography>
                     </DetailRow>
 
+                    {rxn.llm_council_proposals?.map((proposal, index) => (
+                        <DetailRow key={`${proposal.source_name}-${index}`} label="LLM council proposal">
+                            <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <Chip size="small" label={proposal.source_name} />
+                                <Typography variant="body2">Proposed direction: {proposal.proposed_direction}</Typography>
+                            </Box>
+                        </DetailRow>
+                    ))}
+
                     {rxn.thermo_evidence?.map((evidence, index) => (
                         <DetailRow key={`${evidence.source ?? evidence.cross_source ?? index}-${index}`} label="Thermo evidence">
                             <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
